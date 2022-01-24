@@ -1,3 +1,14 @@
+/**
+ * @file frequencies-mpi.c
+ * @author your name Nicola Arpino & Alessandra Morellini
+ * @brief Program that calculates fequencies of strings using MPI
+ * @version 0.1
+ * @date 2022-01-24
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
+
 #include <mpi.h>
 #include <stdio.h>
 #include <math.h>
@@ -5,8 +16,14 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define RECV_SIZE 20
+#define RECV_SIZE 2000
+#define INPUT_SIZE 2000
 
+/**
+ * @param alphabeth string containing the alpabhet e.g "abc..z"
+ * @param input_string input string of max lenght INPUT_SIZE
+ * @param out_buffer location in which save frequency vector
+ */
 void calculate_frequencies(char *alphabeth, char *input_string, int *out_buffer)
 {
     int i, idx = 0;
@@ -34,8 +51,8 @@ int main(int argc, char **argv)
     int world_rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
-    char alphabeth[] = "abcdefghijklmnopqrstuvwxyz";
-    char *input_string;
+    char alphabeth[] = "ABCDEFGHIJKLMNOPQRSTUVZabcdefghijklmnopqrstuvwxyz ,";
+    char input_string[INPUT_SIZE] = {""};
     int frequencies[sizeof(alphabeth) / sizeof(char)] = {0};
     int reduce_buff[sizeof(alphabeth) / sizeof(char)] = {0};
     int *final_freq;
@@ -45,21 +62,41 @@ int main(int argc, char **argv)
     int *sendcount;
     char start_scatter = '0';
 
+    double start, finish;
+
     if (world_rank == 0)
     {
-        input_string = argv[1];
+        /* Reading string from file */
+        char *filename = "input.txt";
+        FILE *fp = fopen(filename, "r");
 
-        /* Checking input correctness */
-        if (input_string == NULL)
-            input_string = "examplestring";
+        if (fp == NULL)
+        {
+            fprintf(stderr, "%s", "Error reading input textfile.\n");
+            exit(-1);
+        }
+
+        char ch;
+        int i = 0;
+        while ((ch = fgetc(fp)) != EOF && ch != '\0' && ch != '\n' && i < INPUT_SIZE)
+        {
+            input_string[i] = ch;
+            i++;
+        }
+
+        input_string[i] = '\0';
+        fclose(fp);
+
+        start = MPI_Wtime();
 
         /* Calculating substing per process */
         int input_size = strlen(input_string);
         int padding = input_size % world_size;
         int size_per_process = floor(input_size / world_size);
-        int i = 0, k = 0;
+        int k = 0;
+        i = 0;
         /* Initializing scatter params */
-        if (input_size < world_size)
+        if (input_size < world_size || world_size == 1)
         {
             calculate_frequencies(alphabeth, input_string, frequencies);
         }
@@ -90,14 +127,21 @@ int main(int argc, char **argv)
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
 
-
-    if(world_rank == 0){
+    /* Process 0 takes care of preparing alphabeth and frequencies output arrays */
+    if (world_rank == 0)
+    {
+        if (world_size == 1)
+        {
+            memcpy(reduce_buff, frequencies, sizeof(frequencies));
+        }
         int len = strlen(alphabeth);
-        final_alphabeth = (char*) malloc(len * sizeof(char));
-        final_freq = (int*) calloc(len, sizeof(int));
+        final_alphabeth = (char *)malloc(len * sizeof(char));
+        final_freq = (int *)calloc(len, sizeof(int));
         int i, count = 0;
-        for(i = 0; i < len; i++){
-            if(reduce_buff[i] != 0){
+        for (i = 0; i < len; i++)
+        {
+            if (reduce_buff[i] != 0)
+            {
                 final_freq[count] = reduce_buff[i];
                 final_alphabeth[count] = alphabeth[i];
                 count++;
@@ -105,11 +149,17 @@ int main(int argc, char **argv)
         }
         final_alphabeth = realloc(final_alphabeth, count * sizeof(char));
         final_freq = realloc(final_freq, count * sizeof(int));
-        for(i = 0; i < count; i++){
+
+        finish = MPI_Wtime();
+
+        /* Debug output */
+        for (i = 0; i < count; i++)
+        {
             printf("char: %c freq: %d\n", final_alphabeth[i], final_freq[i]);
         }
+        printf("Total execution time: %e\n", finish - start);
     }
-    
+
     // Finalize the MPI environment.
     MPI_Finalize();
 }
