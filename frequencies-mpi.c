@@ -16,8 +16,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define RECV_SIZE 2000
-#define INPUT_SIZE 2000
+#define RECV_SIZE 200000
+#define INPUT_SIZE 200000
 
 /**
  * @param alphabeth string containing the alpabhet e.g "abc..z"
@@ -78,16 +78,18 @@ int main(int argc, char **argv)
 
         char ch;
         int i = 0;
-        while ((ch = fgetc(fp)) != EOF && ch != '\0' && ch != '\n' && i < INPUT_SIZE)
+        while ((ch = fgetc(fp)) != EOF && ch != '\0' && i < INPUT_SIZE)
         {
+            if(ch == '\n'){
+                input_string[i] = ' ';
+                i++;
+                continue;
+            }
             input_string[i] = ch;
             i++;
         }
-
         input_string[i] = '\0';
         fclose(fp);
-
-        start = MPI_Wtime();
 
         /* Calculating substing per process */
         int input_size = strlen(input_string);
@@ -98,7 +100,7 @@ int main(int argc, char **argv)
         /* Initializing scatter params */
         if (input_size < world_size || world_size == 1)
         {
-            calculate_frequencies(alphabeth, input_string, frequencies);
+            calculate_frequencies(alphabeth, input_string, reduce_buff);
         }
         else
         {
@@ -119,21 +121,22 @@ int main(int argc, char **argv)
         }
     }
 
+    start = MPI_Wtime();
     MPI_Bcast(&start_scatter, 1, MPI_CHAR, 0, MPI_COMM_WORLD);
     if (start_scatter == '1')
     {
+        printf("Scatter process %d\n", world_rank);
         MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
         calculate_frequencies(alphabeth, recv_buff, frequencies);
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
+
     /* Process 0 takes care of preparing alphabeth and frequencies output arrays */
     if (world_rank == 0)
     {
-        if (world_size == 1)
-        {
-            memcpy(reduce_buff, frequencies, sizeof(frequencies));
-        }
+
         int len = strlen(alphabeth);
         final_alphabeth = (char *)malloc(len * sizeof(char));
         final_freq = (int *)calloc(len, sizeof(int));
@@ -149,7 +152,6 @@ int main(int argc, char **argv)
         }
         final_alphabeth = realloc(final_alphabeth, count * sizeof(char));
         final_freq = realloc(final_freq, count * sizeof(int));
-
         finish = MPI_Wtime();
 
         /* Debug output */
