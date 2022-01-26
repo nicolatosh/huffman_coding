@@ -2,68 +2,68 @@
  * @file frequencies-mpi.c
  * @author Nicola Arpino & Alessandra Morellini
  * @brief Program that calculates fequencies of strings using MPI
- * @version 0.1
+ * @version 1.2
  * @date 2022-01-24
  * 
  * @copyright Copyright (c) 2022
  * 
  */
 
-#include "frequencies.h"
 #include <mpi.h>
 #include <stdio.h>
 #include <math.h>
 #include <sys/time.h>
 #include <stdlib.h>
 #include <string.h>
+#include "frequencies_utils.h"
 
-/**
- * @param alphabeth string containing the alpabhet e.g "abc..z"
- * @param input_string input string of max lenght INPUT_SIZE
- * @param out_buffer location in which save frequency vector
- */
-void frequencies_builder(char *alphabeth, char *input_string, int *out_buffer)
+#define RECV_SIZE 200000
+#define INPUT_SIZE 200000
+
+int main(int argc, char **argv)
 {
-    int i, idx = 0;
-    char *ret;
+    // Initialize the MPI environment
+    MPI_Init(NULL, NULL);
 
-    /* Finding occurencies */
-    for (i = 0; i < strlen(input_string); i++)
-    {
-        ret = strchr(alphabeth, input_string[i]);
-        idx = strlen(alphabeth) - strlen(ret);
-        out_buffer[idx] += 1;
-    }
-}
+    // Get the number of processes
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-void calculate_frequencies(char* alphabeth, char* input_string, int* out_frequencies, char* out_alphabeth, MPI_Comm comm)
-{
-    int *frequencies;
-    int *reduce_buff;
+    // Get the rank of the process
+    int myrank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
+
+    char alphabeth[] = "ABCDEFGHIJKLMNOPQRSTUVZabcdefghijklmnopqrstuvwxyz ,";
+    char *input_string;
+    int frequencies[sizeof(alphabeth) / sizeof(char)] = {0};
+    int reduce_buff[sizeof(alphabeth) / sizeof(char)] = {0};
+    int *out_freq;
+    char *out_alphabet;
+    char recv_buff[RECV_SIZE] = {""};
     int *displs;
     int *sendcount;
     char start_scatter = '0';
-    int my_rank, world_size;
-
-    frequencies = calloc(strlen(alphabeth), sizeof(int));
-    reduce_buff = calloc(strlen(alphabeth), sizeof(int));
 
     double start, finish;
-    MPI_Comm_size(comm, &world_size);
-    MPI_Comm_rank(comm, &my_rank);
-    int input_size = strlen(input_string);
-    int padding = input_size % world_size;
-    int size_per_process = floor(input_size / world_size);
-    char *recv_buff = calloc(size_per_process + padding, sizeof(char));
 
-    if (my_rank == 0)
+    if (myrank == 0)
     {
+
+        /* Reading string from default file */
+        char local_string[INPUT_SIZE] = {""};
+        input_string = local_string;
+        char default_textfile[] = "input.txt";
+        read_input_string(input_string, INPUT_SIZE, default_textfile);
+
         /* Calculating substing per process */
-        int k = 0, i;
+        int input_size = strlen(input_string);
+        int padding = input_size % world_size;
+        int size_per_process = floor(input_size / world_size);
+        int k = 0, i = 0;
         /* Initializing scatter params */
         if (input_size < world_size || world_size == 1)
         {
-            frequencies_builder(alphabeth, input_string, reduce_buff);
+            calculate_frequencies(alphabeth, input_string, reduce_buff);
         }
         else
         {
@@ -88,37 +88,43 @@ void calculate_frequencies(char* alphabeth, char* input_string, int* out_frequen
     MPI_Bcast(&start_scatter, 1, MPI_CHAR, 0, MPI_COMM_WORLD);
     if (start_scatter == '1')
     {
-        printf("Scatter process %d\n", my_rank);
-        MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, size_per_process + padding, MPI_CHAR, 0, MPI_COMM_WORLD);
-        frequencies_builder(alphabeth, recv_buff, frequencies);
-        MPI_Reduce(frequencies, reduce_buff, strlen(alphabeth), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        printf("Scatter process %d\n", myrank);
+        MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+        calculate_frequencies(alphabeth, recv_buff, frequencies);
+        MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
 
+    MPI_Barrier(MPI_COMM_WORLD);
 
     /* Process 0 takes care of preparing alphabeth and frequencies output arrays */
-    if (my_rank == 0)
+    if (myrank == 0)
     {
-
-        int i, count = 0, len = strlen(alphabeth);
+        int len = strlen(alphabeth);
+        out_alphabet = (char *)malloc(len * sizeof(char));
+        out_freq = (int *)calloc(len, sizeof(int));
+        int i, count = 0;
         for (i = 0; i < len; i++)
         {
             if (reduce_buff[i] != 0)
             {
-                out_frequencies[count] = reduce_buff[i];
-                out_alphabeth[count] = alphabeth[i];
+                out_freq[count] = reduce_buff[i];
+                out_alphabet[count] = alphabeth[i];
                 count++;
             }
         }
-        out_alphabeth = realloc(out_frequencies, count * sizeof(char));
-        out_frequencies = realloc(out_frequencies, count * sizeof(int));
+        out_alphabet = realloc(out_alphabet, count * sizeof(char));
+        out_freq = realloc(out_freq, count * sizeof(int));
         finish = MPI_Wtime();
 
         /* Debug output */
         for (i = 0; i < count; i++)
         {
-            printf("char: %c freq: %d\n", out_alphabeth[i], out_frequencies[i]);
+            printf("char: %c freq: %d\n", out_alphabet[i], out_freq[i]);
         }
         printf("Total execution time: %e\n", finish - start);
     }
 
+    // Finalize the MPI environment.
+    MPI_Finalize();
+    return 0;
 }
