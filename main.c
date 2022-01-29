@@ -9,18 +9,18 @@
 #include <string.h>
 #include "frequencies_utils.h"
 
-#define RECV_SIZE 200000
-#define INPUT_SIZE 200000
+#define RECV_SIZE 200
+#define INPUT_SIZE 200
 
 // This constant can be avoided by explicitly
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
 
-
-struct nlist { /* table entry: */
-	char name; /* defined char */
-	char *code; /* code */
+struct nlist
+{               /* table entry: */
+    char name;  /* defined char */
+    char *code; /* code */
 };
 int size;
 struct nlist *codes_list[HASHSIZE];
@@ -29,43 +29,48 @@ struct nlist *codes_list[HASHSIZE];
 unsigned hash(char s)
 {
     unsigned hashval;
-    hashval = s + 31 ;
-    return hashval % size;
+    hashval = s;
+    int idx = hashval % size;
+    printf("hash: char %c hashval %d idx: %d\n", s, hashval, idx);
+    return idx;
 }
-
 
 /* lookup: look for s in codes_list */
 struct nlist *lookup(char s)
 {
     struct nlist *np;
     np = codes_list[hash(s)];
-    if ( np != NULL)
+    if (np != NULL){
         return np; /* found */
-    return NULL; /* not found */
+    }
+    return NULL;   /* not found */
 }
-
 
 /* install: put (name, code) in codes_list */
 struct nlist *install(char name, char *code)
 {
     struct nlist *np;
     unsigned hashval;
-    if ((np = lookup(name)) == NULL) { /* not found */
-        np = (struct nlist *) malloc(sizeof(*np));
+    printf("install name %c\n", name);
+    if ((np = lookup(name)) == NULL)
+    { /* not found */
+        np = (struct nlist *)malloc(sizeof(*np));
         if (np == NULL)
-          return NULL;
+            return NULL;
         np->name = name;
         hashval = hash(name);
         codes_list[hashval] = np;
-    } else /* already there */
-        free((void *) np->code); /*free previous code */
+    }
+    else /* already there */
+        free((void *)np->code); /*free previous code */
     if ((np->code = strdup(code)) == NULL)
-       return NULL;
+        return NULL;
     return np;
 }
 
 // A Huffman tree node
-struct MinHeapNode {
+struct MinHeapNode
+{
 
     // One of the input characters
     char data;
@@ -79,7 +84,8 @@ struct MinHeapNode {
 
 // A Min Heap:  Collection of
 // min-heap (or Huffman tree) nodes
-struct MinHeap {
+struct MinHeap
+{
 
     // Current size of min heap
     unsigned size;
@@ -88,15 +94,15 @@ struct MinHeap {
     unsigned capacity;
 
     // Array of minheap node pointers
-    struct MinHeapNode** array;
+    struct MinHeapNode **array;
 };
 
 // A utility function allocate a new
 // min heap node with given character
 // and frequency of the character
-struct MinHeapNode* newNode(char data, unsigned freq)
+struct MinHeapNode *newNode(char data, unsigned freq)
 {
-    struct MinHeapNode* temp = (struct MinHeapNode*)malloc(
+    struct MinHeapNode *temp = (struct MinHeapNode *)malloc(
         sizeof(struct MinHeapNode));
 
     temp->left = temp->right = NULL;
@@ -108,37 +114,36 @@ struct MinHeapNode* newNode(char data, unsigned freq)
 
 // A utility function to create
 // a min heap of given capacity
-struct MinHeap* createMinHeap(unsigned capacity)
+struct MinHeap *createMinHeap(unsigned capacity)
 
 {
 
-    struct MinHeap* minHeap
-        = (struct MinHeap*)malloc(sizeof(struct MinHeap));
+    struct MinHeap *minHeap = (struct MinHeap *)malloc(sizeof(struct MinHeap));
 
     // current size is 0
     minHeap->size = 0;
 
     minHeap->capacity = capacity;
 
-    minHeap->array = (struct MinHeapNode**)malloc(
-        minHeap->capacity * sizeof(struct MinHeapNode*));
+    minHeap->array = (struct MinHeapNode **)malloc(
+        minHeap->capacity * sizeof(struct MinHeapNode *));
     return minHeap;
 }
 
 // A utility function to
 // swap two min heap nodes
-void swapMinHeapNode(struct MinHeapNode** a,
-                     struct MinHeapNode** b)
+void swapMinHeapNode(struct MinHeapNode **a,
+                     struct MinHeapNode **b)
 
 {
 
-    struct MinHeapNode* t = *a;
+    struct MinHeapNode *t = *a;
     *a = *b;
     *b = t;
 }
 
 // The standard minHeapify function.
-void minHeapify(struct MinHeap* minHeap, int idx)
+void minHeapify(struct MinHeap *minHeap, int idx)
 
 {
 
@@ -146,17 +151,14 @@ void minHeapify(struct MinHeap* minHeap, int idx)
     int left = 2 * idx + 1;
     int right = 2 * idx + 2;
 
-    if (left < minHeap->size
-        && minHeap->array[left]->freq
-               < minHeap->array[smallest]->freq)
+    if (left < minHeap->size && minHeap->array[left]->freq < minHeap->array[smallest]->freq)
         smallest = left;
 
-    if (right < minHeap->size
-        && minHeap->array[right]->freq
-               < minHeap->array[smallest]->freq)
+    if (right < minHeap->size && minHeap->array[right]->freq < minHeap->array[smallest]->freq)
         smallest = right;
 
-    if (smallest != idx) {
+    if (smallest != idx)
+    {
         swapMinHeapNode(&minHeap->array[smallest],
                         &minHeap->array[idx]);
         minHeapify(minHeap, smallest);
@@ -165,18 +167,18 @@ void minHeapify(struct MinHeap* minHeap, int idx)
 
 // A utility function to check
 // if size of heap is 1 or not
-int isSizeOne(struct MinHeap* minHeap)
+int isSizeOne(struct MinHeap *minHeap)
 {
     return (minHeap->size == 1);
 }
 
 // A standard function to extract
 // minimum value node from heap
-struct MinHeapNode* extractMin(struct MinHeap* minHeap)
+struct MinHeapNode *extractMin(struct MinHeap *minHeap)
 
 {
 
-    struct MinHeapNode* temp = minHeap->array[0];
+    struct MinHeapNode *temp = minHeap->array[0];
     minHeap->array[0] = minHeap->array[minHeap->size - 1];
 
     --minHeap->size;
@@ -187,17 +189,16 @@ struct MinHeapNode* extractMin(struct MinHeap* minHeap)
 
 // A utility function to insert
 // a new node to Min Heap
-void insertMinHeap(struct MinHeap* minHeap,
-                   struct MinHeapNode* minHeapNode)
+void insertMinHeap(struct MinHeap *minHeap,
+                   struct MinHeapNode *minHeapNode)
 
 {
 
     ++minHeap->size;
     int i = minHeap->size - 1;
 
-    while (i
-           && minHeapNode->freq
-                  < minHeap->array[(i - 1) / 2]->freq) {
+    while (i && minHeapNode->freq < minHeap->array[(i - 1) / 2]->freq)
+    {
 
         minHeap->array[i] = minHeap->array[(i - 1) / 2];
         i = (i - 1) / 2;
@@ -207,7 +208,7 @@ void insertMinHeap(struct MinHeap* minHeap,
 }
 
 // A standard function to build min heap
-void buildMinHeap(struct MinHeap* minHeap)
+void buildMinHeap(struct MinHeap *minHeap)
 
 {
 
@@ -229,7 +230,7 @@ void printArr(char arr[], int n)
 }
 
 // Utility function to check if this node is leaf
-int isLeaf(struct MinHeapNode* root)
+int isLeaf(struct MinHeapNode *root)
 
 {
 
@@ -240,12 +241,12 @@ int isLeaf(struct MinHeapNode* root)
 // equal to size and inserts all character of
 // data[] in min heap. Initially size of
 // min heap is equal to capacity
-struct MinHeap* createAndBuildMinHeap(char data[],
+struct MinHeap *createAndBuildMinHeap(char data[],
                                       int freq[], int size)
 
 {
 
-    struct MinHeap* minHeap = createMinHeap(size);
+    struct MinHeap *minHeap = createMinHeap(size);
 
     for (int i = 0; i < size; ++i)
         minHeap->array[i] = newNode(data[i], freq[i]);
@@ -257,7 +258,7 @@ struct MinHeap* createAndBuildMinHeap(char data[],
 }
 
 // The main function that builds Huffman tree
-struct MinHeapNode* buildHuffmanTree(char data[],
+struct MinHeapNode *buildHuffmanTree(char data[],
                                      int freq[], int size)
 
 {
@@ -266,11 +267,11 @@ struct MinHeapNode* buildHuffmanTree(char data[],
     // Step 1: Create a min heap of capacity
     // equal to size.  Initially, there are
     // modes equal to size.
-    struct MinHeap* minHeap
-        = createAndBuildMinHeap(data, freq, size);
+    struct MinHeap *minHeap = createAndBuildMinHeap(data, freq, size);
 
     // Iterate while size of heap doesn't become 1
-    while (!isSizeOne(minHeap)) {
+    while (!isSizeOne(minHeap))
+    {
 
         // Step 2: Extract the two minimum
         // freq items from min heap
@@ -300,32 +301,47 @@ struct MinHeapNode* buildHuffmanTree(char data[],
 
 // Prints huffman codes from the root of Huffman Tree.
 // It uses arr[] to store codes
-void FillCodesList(struct MinHeapNode* root, char arr[],
-                int top)
+void FillCodesList(struct MinHeapNode *root, char arr[],
+                   int top)
 
 {
-
     // Assign 0 to left edge and recur
-    if (root->left) {
-        #pragma omp task shared(root, top) firstprivate(arr) untied
-        arr[top] = '0';
-        FillCodesList(root->left, arr, top + 1);
+    if (root->left)
+    {
+        #pragma omp task shared(arr, top) firstprivate(root)
+        {
+            #pragma omp critical
+            arr[top] = '0';
+
+            FillCodesList(root->left, arr, top + 1);
+        }
     }
 
     // Assign 1 to right edge and recur
-    if (root->right) {
-        #pragma omp task shared(root, top) firstprivate(arr) untied
-        arr[top] = '1';
-        FillCodesList(root->right, arr, top + 1);
+    if (root->right)
+    {
+        #pragma omp task shared(arr, top) firstprivate(root)
+        {
+            #pragma omp critical
+            arr[top] = '1';
+
+            FillCodesList(root->right, arr, top + 1);
+        }
     }
 
-    // If this is a leaf node, then
-    // it contains one of the input
-    // characters, print the character
-    // and its code from arr[]
-    #pragma omp taskwait
-    if (isLeaf(root)) {
-        install(root->data, arr);
+// If this is a leaf node, then
+// it contains one of the input
+// characters, print the character
+// and its code from arr[]
+#pragma omp taskwait
+    if (isLeaf(root))
+    {
+        arr[top] = '\0';
+        //printf("data %c code %s\n", root->data, arr);
+        struct nlist *listptr = install(root->data, arr);
+        //printf("char ptr %c code %s\n", listptr->name, listptr->code);
+
+        //printf("char %c code %s\n",root->data,  arr);
     }
 }
 
@@ -335,11 +351,9 @@ void FillCodesList(struct MinHeapNode* root, char arr[],
 void HuffmanCodes(char data[], int freq[], int size)
 
 {
-    
+
     // Construct Huffman Tree
-    struct MinHeapNode* root
-        = buildHuffmanTree(data, freq, size);
-    
+    struct MinHeapNode *root = buildHuffmanTree(data, freq, size);
 
     // Print Huffman codes using
     // the Huffman tree built above
@@ -347,11 +361,11 @@ void HuffmanCodes(char data[], int freq[], int size)
 
     #pragma omp parallel
     {
-        #pragma omp single
+        /* TODO check correcrness with and without nowait*/
+        #pragma omp single nowait
         FillCodesList(root, arr, top);
     }
 }
-
 
 // Driver code
 int main()
@@ -386,7 +400,7 @@ int main()
         /* Reading string from default file */
         char local_string[INPUT_SIZE] = {""};
         input_string = local_string;
-        char default_textfile[] = "input.txt";
+        char default_textfile[] = "myText.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -407,7 +421,7 @@ int main()
             for (i = 0; i < world_size; i++)
             {
                 /* Last process will receive also the padding */
-                
+
                 if (i == (world_size - 1))
                     sendcount[i] = size_per_process + padding;
                 else
@@ -423,10 +437,8 @@ int main()
     MPI_Bcast(&start_scatter, 1, MPI_CHAR, 0, MPI_COMM_WORLD);
     if (start_scatter == '1')
     {
-        printf("Scatter process %d\n", myrank);
         MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
         calculate_frequencies(alphabeth, recv_buff, frequencies);
-        printf("before reduce process: %d char %c: %d\n", myrank, alphabeth[23], frequencies[23]);
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
 
@@ -436,7 +448,7 @@ int main()
     if (myrank == 0)
     {
         int len = strlen(alphabeth);
-        out_alphabet = (char *)malloc(len * sizeof(char));
+        out_alphabet = (char *)calloc(len, sizeof(char));
         out_freq = (int *)calloc(len, sizeof(int));
         int i, count = 0;
         for (i = 0; i < len; i++)
@@ -451,17 +463,24 @@ int main()
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
         finish = MPI_Wtime();
+        printf("alphabet %s\n", out_alphabet);
 
         /* Debug output */
+        // for (i = 0; i < count; i++)
+        // {
+        //     printf("char: %c freq: %d\n", out_alphabet[i], out_freq[i]);
+        // }
+        printf("Total execution time: %e\n", finish - start);
+
+        size = strlen(out_alphabet);
+        /* Build huff tree */
+
+        HuffmanCodes(out_alphabet, out_freq, count);
+        printf("-------\n");
         for (i = 0; i < count; i++)
         {
-            printf("char: %c freq: %d\n", out_alphabet[i], out_freq[i]);
+            printf("char %c code %s\n", codes_list[hash(out_alphabet[i])]->name, codes_list[hash(out_alphabet[i])]->code);
         }
-        printf("Total execution time: %e\n", finish - start);
-       
-        size = count;
-        /* Build huff tree */
-        HuffmanCodes(out_alphabet, out_freq, count);
     }
 
     // Finalize the MPI environment.
