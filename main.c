@@ -61,8 +61,7 @@ struct nlist *install(char name, char *code)
         hashval = hash(name);
         codes_list[hashval] = np;
     }
-    else /* already there */
-        free((void *)np->code); /*free previous code */
+    memset(np->code, ' ', CODES_LEN);
     if (strncpy(np->code, code, strlen(code)) == NULL)
         return NULL;
     return np;
