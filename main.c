@@ -7,6 +7,7 @@
 #include <sys/time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stddef.h>
 #include "frequencies_utils.h"
 
 #define RECV_SIZE 200
@@ -16,7 +17,7 @@
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
-#define CODES_LEN 8
+#define CODES_LEN 9
 
 struct nlist
 {               /* table entry: */
@@ -340,7 +341,6 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     {
         arr[top] = '\0';
         struct nlist *listptr = install(root->data, arr);
-        printf("char %c code %s\n", listptr->name, listptr->code);
     }
 }
 
@@ -392,6 +392,17 @@ int main()
     char start_scatter = '0';
 
     double start, finish;
+
+    /* Derived datatype for struct */
+    const int nitems = 2;
+    int blocklengths[2] = {1, CODES_LEN};
+    MPI_Datatype types[2] = {MPI_CHAR, MPI_CHAR};
+    MPI_Aint offsets[2];
+    MPI_Datatype mpi_codeblock;
+    offsets[0] = offsetof(struct nlist, name);
+    offsets[1] = offsetof(struct nlist, code);
+    MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_codeblock);
+    MPI_Type_commit(&mpi_codeblock);
 
     if (myrank == 0)
     {
@@ -462,7 +473,6 @@ int main()
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
         finish = MPI_Wtime();
-        printf("alphabet %s\n", out_alphabet);
 
         /* Debug output */
         // for (i = 0; i < count; i++)
@@ -480,7 +490,11 @@ int main()
         {
             printf("char %c code %s\n", codes_list[hash(out_alphabet[i])]->name, codes_list[hash(out_alphabet[i])]->code);
         }
+
+
     }
+
+
 
     // Finalize the MPI environment.
     MPI_Finalize();
