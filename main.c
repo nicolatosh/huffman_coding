@@ -62,8 +62,11 @@ struct nlist *install(char name, char *code)
         codes_list[hashval] = np;
     }
     memset(np->code, ' ', CODES_LEN);
-    if (strncpy(np->code, code, strlen(code)) == NULL)
+    char *res = strncpy(np->code, code, strlen(code));
+    if(res == NULL)
         return NULL;
+    else
+        np->code[strlen(code) + 1] = '\0';
     return np;
 }
 
@@ -307,7 +310,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     // Assign 0 to left edge and recur
     if (root->left)
     {
-        #pragma omp task shared(arr, top) firstprivate(root)
+        #pragma omp task shared(arr, top) firstprivate(root) depend(out:top)
         {
             #pragma omp critical
             arr[top] = '0';
@@ -319,7 +322,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     // Assign 1 to right edge and recur
     if (root->right)
     {
-        #pragma omp task shared(arr, top) firstprivate(root)
+        #pragma omp task shared(arr, top) firstprivate(root) depend(in:top)
         {
             #pragma omp critical
             arr[top] = '1';
@@ -337,6 +340,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     {
         arr[top] = '\0';
         struct nlist *listptr = install(root->data, arr);
+        printf("char %c code %s\n", listptr->name, listptr->code);
     }
 }
 
@@ -357,7 +361,7 @@ void HuffmanCodes(char data[], int freq[], int size)
     #pragma omp parallel
     {
         /* TODO check correcrness with and without nowait*/
-        #pragma omp single nowait
+        #pragma omp single
         FillCodesList(root, arr, top);
     }
 }
