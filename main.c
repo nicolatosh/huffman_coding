@@ -16,11 +16,12 @@
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
+#define CODES_LEN 8
 
 struct nlist
 {               /* table entry: */
     char name;  /* defined char */
-    char *code; /* code */
+    char code[CODES_LEN]; /* code */
 };
 int size;
 struct nlist *codes_list[HASHSIZE];
@@ -31,7 +32,7 @@ unsigned hash(char s)
     unsigned hashval;
     hashval = s;
     int idx = hashval % size;
-    printf("hash: char %c hashval %d idx: %d\n", s, hashval, idx);
+    //printf("hash: char %c size %d idx: %d\n", s, size, idx);
     return idx;
 }
 
@@ -51,7 +52,6 @@ struct nlist *install(char name, char *code)
 {
     struct nlist *np;
     unsigned hashval;
-    printf("install name %c\n", name);
     if ((np = lookup(name)) == NULL)
     { /* not found */
         np = (struct nlist *)malloc(sizeof(*np));
@@ -63,7 +63,7 @@ struct nlist *install(char name, char *code)
     }
     else /* already there */
         free((void *)np->code); /*free previous code */
-    if ((np->code = strdup(code)) == NULL)
+    if (strncpy(np->code, code, strlen(code)) == NULL)
         return NULL;
     return np;
 }
@@ -337,11 +337,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     if (isLeaf(root))
     {
         arr[top] = '\0';
-        //printf("data %c code %s\n", root->data, arr);
         struct nlist *listptr = install(root->data, arr);
-        //printf("char ptr %c code %s\n", listptr->name, listptr->code);
-
-        //printf("char %c code %s\n",root->data,  arr);
     }
 }
 
@@ -472,7 +468,7 @@ int main()
         // }
         printf("Total execution time: %e\n", finish - start);
 
-        size = strlen(out_alphabet);
+        size = strlen(alphabeth);
         /* Build huff tree */
 
         HuffmanCodes(out_alphabet, out_freq, count);
