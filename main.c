@@ -336,6 +336,10 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     {
         arr[top] = '\0';
         bool res = install(root->data, arr);
+        if(!res){
+            fprintf(stderr, "Bad install!\n");
+            exit(-1);
+        }
     }
 }
 
@@ -369,14 +373,16 @@ void HuffmanCodes(char data[], int freq[], int size)
  * @return char* huff code
  */
 char *calculate_huff_code(char *in_str){
-    int i = 0, code_len = 0;
+    int i = 0, code_len = 0, buff_len = 10;
     char * code;
-    char *out_string = (char *)calloc(10, sizeof(char));
+    char *out_string = (char *)calloc(buff_len, sizeof(char));
     for(i=0; i<strlen(in_str); i++){
         code = codes_list[hash(in_str[i])].code;
         code_len = strlen(code);
-        if((sizeof(out_string) - strlen(out_string)) <= code_len)
-            out_string = (char*)realloc(out_string, sizeof(out_string) + (code_len * REALLOC_OFFSET));
+        if((buff_len - strlen(out_string)) <= code_len){
+            buff_len += (code_len * REALLOC_OFFSET);
+            out_string = (char*)realloc(out_string, buff_len );
+        }
         strcat(out_string, code);
     }
     return out_string;
