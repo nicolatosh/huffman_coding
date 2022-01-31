@@ -516,9 +516,9 @@ int main()
         printf("Out code for [%s] is [%s]\n", recv_buff, out);
     }
     
-    // // Finalize the MPI environment.
-    // MPI_Type_free(&mpi_codelist);
-    // MPI_Type_free(&mpi_codeblock);
+    // Finalize the MPI environment.
+    MPI_Type_free(&mpi_codelist);
+    MPI_Type_free(&mpi_codeblock);
     MPI_Finalize();
     return 0;
 }
