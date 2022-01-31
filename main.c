@@ -25,7 +25,7 @@ struct nlist
     char code[CODES_LEN]; /* code */
 };
 int size;
-struct nlist *codes_list[HASHSIZE];
+struct nlist codes_list[HASHSIZE];
 
 /* hash: form hash value for string s */
 unsigned hash(char s)
@@ -38,37 +38,31 @@ unsigned hash(char s)
 }
 
 /* lookup: look for s in codes_list */
-struct nlist *lookup(char s)
+bool lookup(char s)
 {
-    struct nlist *np;
+    struct nlist np;
     np = codes_list[hash(s)];
-    if (np != NULL){
-        return np; /* found */
+    if (np.name == s){
+        return true; /* found */
+    }else if(np.name != 0){
+        printf("Char found [%c]\n", np.name);
+        fprintf(stderr, "Bad lookup: %c literal hash is already used!\n", s);
+        exit(-1);
     }
-    return NULL;   /* not found */
+    return false;   /* not found */
 }
 
 /* install: put (name, code) in codes_list */
-struct nlist *install(char name, char *code)
+bool install(char name, char *code)
 {
-    struct nlist *np;
     unsigned hashval;
-    if ((np = lookup(name)) == NULL)
+    if (!lookup(name))
     { /* not found */
-        np = (struct nlist *)malloc(sizeof(*np));
-        if (np == NULL)
-            return NULL;
-        np->name = name;
         hashval = hash(name);
-        codes_list[hashval] = np;
+        codes_list[hashval].name = name; 
+        memcpy(codes_list[hashval].code, code, strlen(code));
     }
-    memset(np->code, ' ', CODES_LEN);
-    char *res = strncpy(np->code, code, strlen(code));
-    if(res == NULL)
-        return NULL;
-    else
-        np->code[strlen(code) + 1] = '\0';
-    return np;
+    return true;
 }
 
 // A Huffman tree node
@@ -340,7 +334,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     if (isLeaf(root))
     {
         arr[top] = '\0';
-        struct nlist *listptr = install(root->data, arr);
+        bool res = install(root->data, arr);
     }
 }
 
@@ -364,6 +358,22 @@ void HuffmanCodes(char data[], int freq[], int size)
         #pragma omp single
         FillCodesList(root, arr, top);
     }
+}
+
+
+/**
+ * @brief Walks the code-table and returns the huffman code for a given string
+ *
+ * @param in_str 
+ * @return char* huff code
+ */
+char *calculate_huff_code(char *in_str){
+    int i = 0;
+    char *out_string = (char *)calloc(10, sizeof(char));
+    for(i=0; i<strlen(in_str); i++){
+        strcat(out_string, codes_list[hash(in_str[i])].code);
+    }
+    return out_string;
 }
 
 // Driver code
@@ -399,11 +409,16 @@ int main()
     MPI_Datatype types[2] = {MPI_CHAR, MPI_CHAR};
     MPI_Aint offsets[2];
     MPI_Datatype mpi_codeblock;
+    MPI_Datatype mpi_codelist;
     offsets[0] = offsetof(struct nlist, name);
     offsets[1] = offsetof(struct nlist, code);
     MPI_Type_create_struct(nitems, blocklengths, offsets, types, &mpi_codeblock);
     MPI_Type_commit(&mpi_codeblock);
+    MPI_Type_contiguous(HASHSIZE, mpi_codeblock, &mpi_codelist);
+    MPI_Type_commit(&mpi_codelist);
+    struct nlist *test = (struct nlist *)malloc(sizeof(*test));
 
+    size = strlen(alphabeth);
     if (myrank == 0)
     {
 
@@ -473,30 +488,32 @@ int main()
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
         finish = MPI_Wtime();
-
-        /* Debug output */
-        // for (i = 0; i < count; i++)
-        // {
-        //     printf("char: %c freq: %d\n", out_alphabet[i], out_freq[i]);
-        // }
         printf("Total execution time: %e\n", finish - start);
 
-        size = strlen(alphabeth);
         /* Build huff tree */
-
         HuffmanCodes(out_alphabet, out_freq, count);
         printf("-------\n");
         for (i = 0; i < count; i++)
         {
-            printf("char %c code %s\n", codes_list[hash(out_alphabet[i])]->name, codes_list[hash(out_alphabet[i])]->code);
+            printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
         }
-
-
     }
 
-
-
+    /* Sending code-table to all processes */    
+    MPI_Bcast(codes_list, 1, mpi_codelist, 0, MPI_COMM_WORLD);
+        
+    char *out;
+    if (world_size == 1){
+        out = calculate_huff_code(input_string);
+        printf("Out code for [%s] is [%s]\n", input_string, out);
+    }else{
+        out = calculate_huff_code(recv_buff);
+        printf("Out code for [%s] is [%s]\n", recv_buff, out);
+    }
+    
     // Finalize the MPI environment.
+    MPI_Type_free(&mpi_codelist);
+    MPI_Type_free(&mpi_codeblock);
     MPI_Finalize();
     return 0;
 }
