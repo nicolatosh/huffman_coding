@@ -12,12 +12,13 @@
 
 #define RECV_SIZE 200
 #define INPUT_SIZE 200
+#define REALLOC_OFFSET 5
 
 // This constant can be avoided by explicitly
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
-#define CODES_LEN 9
+#define CODES_LEN 10
 
 struct nlist
 {               /* table entry: */
@@ -368,10 +369,15 @@ void HuffmanCodes(char data[], int freq[], int size)
  * @return char* huff code
  */
 char *calculate_huff_code(char *in_str){
-    int i = 0;
+    int i = 0, code_len = 0;
+    char * code;
     char *out_string = (char *)calloc(10, sizeof(char));
     for(i=0; i<strlen(in_str); i++){
-        strcat(out_string, codes_list[hash(in_str[i])].code);
+        code = codes_list[hash(in_str[i])].code;
+        code_len = strlen(code);
+        if((sizeof(out_string) - strlen(out_string)) <= code_len)
+            out_string = (char*)realloc(out_string, sizeof(out_string) + (code_len * REALLOC_OFFSET));
+        strcat(out_string, code);
     }
     return out_string;
 }
@@ -416,7 +422,6 @@ int main()
     MPI_Type_commit(&mpi_codeblock);
     MPI_Type_contiguous(HASHSIZE, mpi_codeblock, &mpi_codelist);
     MPI_Type_commit(&mpi_codelist);
-    struct nlist *test = (struct nlist *)malloc(sizeof(*test));
 
     size = strlen(alphabeth);
     if (myrank == 0)
@@ -425,7 +430,7 @@ int main()
         /* Reading string from default file */
         char local_string[INPUT_SIZE] = {""};
         input_string = local_string;
-        char default_textfile[] = "myText.txt";
+        char default_textfile[] = "input.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -511,9 +516,9 @@ int main()
         printf("Out code for [%s] is [%s]\n", recv_buff, out);
     }
     
-    // Finalize the MPI environment.
-    MPI_Type_free(&mpi_codelist);
-    MPI_Type_free(&mpi_codeblock);
+    // // Finalize the MPI environment.
+    // MPI_Type_free(&mpi_codelist);
+    // MPI_Type_free(&mpi_codeblock);
     MPI_Finalize();
     return 0;
 }
