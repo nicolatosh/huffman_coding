@@ -455,7 +455,7 @@ int main()
         int size_per_process = floor(input_size / world_size);
         int k = 0, i = 0;
         /* Initializing scatter params */
-        if (input_size < world_size || world_size == 1)
+        if (input_size < world_size)
         {
             calculate_frequencies(alphabeth, input_string, reduce_buff);
         }
@@ -475,6 +475,7 @@ int main()
 
                 displs[i] = k;
                 k += size_per_process;
+                printf("disp %d count %d\n", displs[i], sendcount[i]);
             }
         }
     }
@@ -488,6 +489,8 @@ int main()
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }
 
+    printf("process %d string %s\n", myrank, recv_buff);
+    
     MPI_Barrier(MPI_COMM_WORLD);
 
     struct MinHeapNode *root;
@@ -511,6 +514,9 @@ int main()
         out_freq = realloc(out_freq, count * sizeof(int));
         finish = MPI_Wtime();
         printf("Total execution time: %e\n", finish - start);
+        for (i = 0; i< count; i++){
+            printf("char %c freq %d\n", out_alphabet[i], out_freq[i]);
+        }
 
         /* Build huff tree */
         root = HuffmanCodes(out_alphabet, out_freq, count);
@@ -524,40 +530,31 @@ int main()
     /* Sending code-table to all processes */
     MPI_Bcast(codes_list, 1, mpi_codelist, 0, MPI_COMM_WORLD);
 
-    char *out;
-    if (world_size == 1)
-    {
-        out = calculate_huff_code(input_string);
-        printf("process %d Out code for [%s] is [%s]\n", myrank, input_string, out);
-    }
-    else
-    {
-        out = calculate_huff_code(recv_buff);
-        printf("process %d Out code for [%s] is [%s]\n", myrank, recv_buff, out);
-    }
+    char *out, *final_string;
+    out = calculate_huff_code(recv_buff);
 
     /* Encoding with huff codes */
+    if (start_scatter == '1'){
+        int counts[world_size], gather_disps[world_size], i;
+        int nelem = strlen(out);
+        MPI_Gather(&nelem, 1, MPI_INT, counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        for (i = 0; i < world_size; i++)
+            gather_disps[i] = (i > 0) ? (gather_disps[i - 1] + counts[i - 1]) : 0;
+        
+        
+        if (myrank == 0)
+            final_string = (char *)calloc(gather_disps[world_size - 1] + counts[world_size - 1], sizeof(char));
 
-    int counts[world_size], gather_disps[world_size], i;
-    int nelem = strlen(out);
-    MPI_Gather(&nelem, 1, MPI_INT, counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
-    for (i = 0; i < world_size; i++)
-        gather_disps[i] = (i > 0) ? (gather_disps[i - 1] + counts[i - 1]) : 0;
-    
-    char *final_string;
-    if (myrank == 0)
-        final_string = (char *)calloc(gather_disps[world_size - 1] + counts[world_size - 1], sizeof(char));
-
-    MPI_Gatherv(out, nelem, MPI_CHAR, final_string, counts, gather_disps, MPI_CHAR, 0, MPI_COMM_WORLD);
-
-    MPI_Barrier(MPI_COMM_WORLD);
-    if(myrank == 0){
-        printf("FINAL: %s\n", final_string);
+        MPI_Gatherv(out, nelem, MPI_CHAR, final_string, counts, gather_disps, MPI_CHAR, 0, MPI_COMM_WORLD);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
+    
+    
 
     /* Serial decoding */
 
     if(myrank == 0){
+        printf("final encoding %s\n", final_string);
         struct MinHeapNode *node = root;
         int i, len;
         len = strlen(final_string);
@@ -575,7 +572,6 @@ int main()
                 node = root;
             }
         }
-        printf("Decoded string: %s\n", decoded_string);
     }
 
     // Finalize the MPI environment.
