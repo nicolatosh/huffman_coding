@@ -398,6 +398,46 @@ char *calculate_huff_code(char *in_str)
     return out_string;
 }
 
+
+    /**
+     * @brief 
+     * 
+     * @param root 
+     * @param in_string 
+     * @param size_per_thread 
+     * @param padding 
+     */
+    char *decode_string(struct MinHeapNode* root, char* in_string, int size_per_thread, int padding, int total_threads)
+    {
+        int thread_rank = omp_get_thread_num();
+        struct MinHeapNode *node = root;
+        int len = strlen(in_string);
+        char *decoded_string = (char*)calloc(len, sizeof(char));
+        int initial_offset, end_offset, i;
+
+        initial_offset = thread_rank * size_per_thread;
+        end_offset = initial_offset + size_per_thread;
+        if(total_threads == thread_rank && padding > 0)
+            end_offset += padding;
+        
+        printf("Thread %d size_per_thread %d initial_off %d final_off %d\n", thread_rank, size_per_thread, initial_offset, end_offset);
+        for(i=initial_offset; i<end_offset; i++)
+        {
+            if(in_string[i] == '0' && node->left != NULL){
+                node = node->left;
+            }else if(node->right != NULL){
+                node = node->right;
+            }
+
+            if(isLeaf(node)){
+                strncat(decoded_string, &node->data, 1);
+                node = root;
+            }
+        }
+        printf("Thread [%d] string %s\n", thread_rank, decoded_string);
+        return decoded_string;
+    }
+
 // Driver code
 int main()
 {
@@ -547,14 +587,16 @@ int main()
 
         MPI_Gatherv(out, nelem, MPI_CHAR, final_string, counts, gather_disps, MPI_CHAR, 0, MPI_COMM_WORLD);
         MPI_Barrier(MPI_COMM_WORLD);
+        if(myrank == 0){
+            printf("FINAL: %s\n", final_string);
+        }
     }
     
     
 
     /* Serial decoding */
-
     if(myrank == 0){
-        printf("final encoding %s\n", final_string);
+        printf("\n---- SERIAL DECODING ----\n");
         struct MinHeapNode *node = root;
         int i, len;
         len = strlen(final_string);
@@ -572,6 +614,26 @@ int main()
                 node = root;
             }
         }
+    }
+
+    if(myrank == 0){
+        printf("\n---- PARALLEL DECODING ----\n");
+        omp_set_num_threads(2);
+        double tstart, tstop;
+        int len;
+        len = strlen(final_string);
+        int thread_count = 2;
+        int padding = len % thread_count;
+        int size_per_process = floor(len / thread_count);
+        char *decoded_str;
+
+        printf("len %d\n", omp_get_num_threads());
+
+        tstart = omp_get_wtime();
+        #pragma omp parallel
+        decoded_str = decode_string(root, final_string, size_per_process, padding, thread_count);
+        tstop = omp_get_wtime();
+        printf("Elapsed time: %f\n", tstop - tstart);
     }
 
     // Finalize the MPI environment.
