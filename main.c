@@ -10,8 +10,8 @@
 #include <stddef.h>
 #include "frequencies_utils.h"
 
-#define RECV_SIZE 200
-#define INPUT_SIZE 200
+#define RECV_SIZE 2000
+#define INPUT_SIZE 2000
 #define REALLOC_OFFSET 5
 
 // This constant can be avoided by explicitly
@@ -346,7 +346,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
 // The main function that builds a
 // Huffman Tree and print codes by traversing
 // the built Huffman Tree
-void HuffmanCodes(char data[], int freq[], int size)
+struct MinHeapNode * HuffmanCodes(char data[], int freq[], int size)
 
 {
 
@@ -363,6 +363,8 @@ void HuffmanCodes(char data[], int freq[], int size)
         #pragma omp single
         FillCodesList(root, arr, top);
     }
+
+    return root;
 }
 
 
@@ -436,7 +438,7 @@ int main()
         /* Reading string from default file */
         char local_string[INPUT_SIZE] = {""};
         input_string = local_string;
-        char default_textfile[] = "input.txt";
+        char default_textfile[] = "myText.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -480,6 +482,7 @@ int main()
 
     MPI_Barrier(MPI_COMM_WORLD);
 
+    struct MinHeapNode *root; 
     /* Process 0 takes care of preparing alphabeth and frequencies output arrays */
     if (myrank == 0)
     {
@@ -502,7 +505,7 @@ int main()
         printf("Total execution time: %e\n", finish - start);
 
         /* Build huff tree */
-        HuffmanCodes(out_alphabet, out_freq, count);
+        root = HuffmanCodes(out_alphabet, out_freq, count);
         printf("-------\n");
         for (i = 0; i < count; i++)
         {
@@ -521,7 +524,42 @@ int main()
         out = calculate_huff_code(recv_buff);
         printf("Out code for [%s] is [%s]\n", recv_buff, out);
     }
-    
+
+    /* Encoding with huff codes */
+    char *final_string;
+    if(myrank == 0){
+        final_string = (char*)calloc(RECV_SIZE, sizeof(char));
+    }
+    MPI_Gather(out, 5, MPI_CHAR, final_string, 5, MPI_CHAR, 0, MPI_COMM_WORLD);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if(myrank == 0){
+        printf("FINAL: %s\n", final_string);
+    }
+
+    /* Serial decoding */
+
+    if(myrank == 0){
+        struct MinHeapNode *node = root;
+        int i, len;
+        len = strlen(final_string);
+        char *decoded_string = (char*)calloc(len, sizeof(char));
+        for(i=0; i<len; i++)
+        {
+            if(final_string[i] == '0' && node->left != NULL){
+                node = node->left;
+            }else if(node->right != NULL){
+                node = node->right;
+            }
+
+            if(isLeaf(node)){
+                printf("Data: %c\n", node->data);
+                strncat(decoded_string, &node->data, 1);
+                node = root;
+            }
+        }
+        printf("Decoded string: %s\n", decoded_string); 
+    }
+
     // Finalize the MPI environment.
     MPI_Type_free(&mpi_codelist);
     MPI_Type_free(&mpi_codeblock);
