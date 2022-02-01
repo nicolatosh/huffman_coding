@@ -21,8 +21,8 @@
 #define CODES_LEN 10
 
 struct nlist
-{               /* table entry: */
-    char name;  /* defined char */
+{                         /* table entry: */
+    char name;            /* defined char */
     char code[CODES_LEN]; /* code */
 };
 int size;
@@ -43,14 +43,17 @@ bool lookup(char s)
 {
     struct nlist np;
     np = codes_list[hash(s)];
-    if (np.name == s){
+    if (np.name == s)
+    {
         return true; /* found */
-    }else if(np.name != 0){
+    }
+    else if (np.name != 0)
+    {
         printf("Char found [%c]\n", np.name);
         fprintf(stderr, "Bad lookup: %c literal hash is already used!\n", s);
         exit(-1);
     }
-    return false;   /* not found */
+    return false; /* not found */
 }
 
 /* install: put (name, code) in codes_list */
@@ -60,7 +63,7 @@ bool install(char name, char *code)
     if (!lookup(name))
     { /* not found */
         hashval = hash(name);
-        codes_list[hashval].name = name; 
+        codes_list[hashval].name = name;
         memcpy(codes_list[hashval].code, code, strlen(code));
     }
     return true;
@@ -306,9 +309,10 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     // Assign 0 to left edge and recur
     if (root->left)
     {
-        #pragma omp task shared(arr, top) firstprivate(root) depend(out:top)
+#pragma omp task shared(arr, top) firstprivate(root) depend(out \
+                                                            : top)
         {
-            #pragma omp critical
+#pragma omp critical
             arr[top] = '0';
 
             FillCodesList(root->left, arr, top + 1);
@@ -318,9 +322,10 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     // Assign 1 to right edge and recur
     if (root->right)
     {
-        #pragma omp task shared(arr, top) firstprivate(root) depend(in:top)
+#pragma omp task shared(arr, top) firstprivate(root) depend(in \
+                                                            : top)
         {
-            #pragma omp critical
+#pragma omp critical
             arr[top] = '1';
 
             FillCodesList(root->right, arr, top + 1);
@@ -336,7 +341,8 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
     {
         arr[top] = '\0';
         bool res = install(root->data, arr);
-        if(!res){
+        if (!res)
+        {
             fprintf(stderr, "Bad install!\n");
             exit(-1);
         }
@@ -346,7 +352,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
 // The main function that builds a
 // Huffman Tree and print codes by traversing
 // the built Huffman Tree
-struct MinHeapNode * HuffmanCodes(char data[], int freq[], int size)
+struct MinHeapNode *HuffmanCodes(char data[], int freq[], int size)
 
 {
 
@@ -357,16 +363,15 @@ struct MinHeapNode * HuffmanCodes(char data[], int freq[], int size)
     // the Huffman tree built above
     char arr[MAX_TREE_HT], top = 0;
 
-    #pragma omp parallel
+#pragma omp parallel
     {
-        /* TODO check correcrness with and without nowait*/
-        #pragma omp single
+/* TODO check correcrness with and without nowait*/
+#pragma omp single
         FillCodesList(root, arr, top);
     }
 
     return root;
 }
-
 
 /**
  * @brief Walks the code-table and returns the huffman code for a given string
@@ -374,16 +379,19 @@ struct MinHeapNode * HuffmanCodes(char data[], int freq[], int size)
  * @param in_str 
  * @return char* huff code
  */
-char *calculate_huff_code(char *in_str){
+char *calculate_huff_code(char *in_str)
+{
     int i = 0, code_len = 0, buff_len = 10;
-    char * code;
+    char *code;
     char *out_string = (char *)calloc(buff_len, sizeof(char));
-    for(i=0; i<strlen(in_str); i++){
+    for (i = 0; i < strlen(in_str); i++)
+    {
         code = codes_list[hash(in_str[i])].code;
         code_len = strlen(code);
-        if((buff_len - strlen(out_string)) <= code_len){
+        if ((buff_len - strlen(out_string)) <= code_len)
+        {
             buff_len += (code_len * REALLOC_OFFSET);
-            out_string = (char*)realloc(out_string, buff_len );
+            out_string = (char *)realloc(out_string, buff_len);
         }
         strcat(out_string, code);
     }
@@ -522,7 +530,7 @@ int main()
 
     MPI_Barrier(MPI_COMM_WORLD);
 
-    struct MinHeapNode *root; 
+    struct MinHeapNode *root;
     /* Process 0 takes care of preparing alphabeth and frequencies output arrays */
     if (myrank == 0)
     {
@@ -553,24 +561,34 @@ int main()
         }
     }
 
-    /* Sending code-table to all processes */    
+    /* Sending code-table to all processes */
     MPI_Bcast(codes_list, 1, mpi_codelist, 0, MPI_COMM_WORLD);
-        
+
     char *out;
-    if (world_size == 1){
+    if (world_size == 1)
+    {
         out = calculate_huff_code(input_string);
-        printf("Out code for [%s] is [%s]\n", input_string, out);
-    }else{
+        printf("process %d Out code for [%s] is [%s]\n", myrank, input_string, out);
+    }
+    else
+    {
         out = calculate_huff_code(recv_buff);
-        printf("Out code for [%s] is [%s]\n", recv_buff, out);
+        printf("process %d Out code for [%s] is [%s]\n", myrank, recv_buff, out);
     }
 
     /* Encoding with huff codes */
+
+    int counts[world_size], gather_disps[world_size], i;
+    int nelem = strlen(out);
+    MPI_Gather(&nelem, 1, MPI_INT, counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    for (i = 0; i < world_size; i++)
+        gather_disps[i] = (i > 0) ? (gather_disps[i - 1] + counts[i - 1]) : 0;
+    
     char *final_string;
-    if(myrank == 0){
-        final_string = (char*)calloc(RECV_SIZE, sizeof(char));
-    }
-    MPI_Gather(out, 2, MPI_CHAR, final_string, 2, MPI_CHAR, 0, MPI_COMM_WORLD);
+    if (myrank == 0)
+        final_string = (char *)calloc(gather_disps[world_size - 1] + counts[world_size - 1], sizeof(char));
+
+    MPI_Gatherv(out, nelem, MPI_CHAR, final_string, counts, gather_disps, MPI_CHAR, 0, MPI_COMM_WORLD);
     MPI_Barrier(MPI_COMM_WORLD);
     if(myrank == 0){
         printf("FINAL: %s\n", final_string);
@@ -592,12 +610,11 @@ int main()
             }
 
             if(isLeaf(node)){
-                printf("Data: %c\n", node->data);
                 strncat(decoded_string, &node->data, 1);
                 node = root;
             }
         }
-        printf("Decoded string: %s\n", decoded_string); 
+        printf("Decoded string: %s\n", decoded_string);
     }
 
     if(myrank == 0){
