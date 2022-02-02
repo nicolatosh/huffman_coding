@@ -407,34 +407,52 @@ char *calculate_huff_code(char *in_str)
      * @param size_per_thread 
      * @param padding 
      */
-    char *decode_string(struct MinHeapNode* root, char* in_string, int size_per_thread, int padding, int total_threads)
+    char **decode_string(struct MinHeapNode* root, char* in_string, int size_per_thread, int padding, int total_threads, int offset)
     {
         int thread_rank = omp_get_thread_num();
         struct MinHeapNode *node = root;
         int len = strlen(in_string);
-        char *decoded_string = (char*)calloc(len, sizeof(char));
-        int initial_offset, end_offset, i;
-
+        /* Pointer to different strings. There are up to 'offset' strings */
+        char **decoded_string = (char**)malloc(sizeof(char*)*offset);
+        char *local_string;
+        int initial_offset, end_offset, i, k, local_initial_offset, local_end_offset;
         initial_offset = thread_rank * size_per_thread;
         end_offset = initial_offset + size_per_thread;
         if(total_threads == thread_rank && padding > 0)
             end_offset += padding;
         
-        printf("Thread %d size_per_thread %d initial_off %d final_off %d\n", thread_rank, size_per_thread, initial_offset, end_offset);
-        for(i=initial_offset; i<end_offset; i++)
-        {
-            if(in_string[i] == '0' && node->left != NULL){
-                node = node->left;
-            }else if(node->right != NULL){
-                node = node->right;
+        for(k=0; k<offset; k++){   
+            local_initial_offset = initial_offset + k;
+            local_end_offset = end_offset + k;
+            if(thread_rank == 0){
+                local_initial_offset = initial_offset;
+            }else if(thread_rank == total_threads){
+                local_end_offset = end_offset;
             }
+            printf("Thread %d L_start %d L_end %d\n", thread_rank, local_initial_offset, local_end_offset);
+            local_string = calloc(len, sizeof(char));
+            int last_literal_index = 0;
+            node = root;
+            for(i=local_initial_offset; i<local_end_offset; i++)
+            {
+                if(in_string[i] == '0' && node->left != NULL){
+                    node = node->left;
+                }else if(node->right != NULL){
+                    node = node->right;
+                }
 
-            if(isLeaf(node)){
-                strncat(decoded_string, &node->data, 1);
-                node = root;
+                if(isLeaf(node)){
+                    strncat(local_string, &node->data, 1);
+                    node = root;
+                    last_literal_index = i;
+                }
             }
+            if((i - last_literal_index) != 1){
+                local_string = "";
+            }
+            decoded_string[k] = local_string;
+            printf("Thread [%d] string [%d]: %s\n", thread_rank, k, decoded_string[k]);
         }
-        printf("Thread [%d] string %s\n", thread_rank, decoded_string);
         return decoded_string;
     }
 
@@ -619,22 +637,38 @@ int main()
 
     if(myrank == 0){
         printf("\n---- PARALLEL DECODING ----\n");
-        omp_set_num_threads(2);
+        omp_set_num_threads(4);
         double tstart, tstop;
         int len;
         len = strlen(final_string);
-        int thread_count = 2;
+        int thread_count = 4;
         int padding = len % thread_count;
         int size_per_process = floor(len / thread_count);
-        char *decoded_str;
-
-        printf("len %d\n", omp_get_num_threads());
-
+        char ***decoded_str = (char***)malloc(sizeof(char**)*thread_count);
+        char *final_decoded_string = (char*)calloc(len, sizeof(char));
+        int offset = 5;
         tstart = omp_get_wtime();
         #pragma omp parallel
-        decoded_str = decode_string(root, final_string, size_per_process, padding, thread_count);
+        {
+            decoded_str[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);    
+        }
+        int j, i, pos;
+        char *temp_string;
+        for(j=0; j<offset; j++){
+            temp_string = decoded_str[0][j];
+            if(temp_string != ""){
+                strncat(final_decoded_string, temp_string, strlen(temp_string));
+                pos = j;
+                break;
+            }  
+        }
+        for(i=1; i<thread_count; i++){
+            temp_string = decoded_str[i][pos];
+            strncat(final_decoded_string, temp_string, strlen(temp_string));
+        }
         tstop = omp_get_wtime();
         printf("Elapsed time: %f\n", tstop - tstart);
+        printf("Parallel decode: %s\n", final_decoded_string);
     }
 
     // Finalize the MPI environment.
