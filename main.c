@@ -76,11 +76,14 @@ bool install(char name, char *code)
     return false;
 }
 
+struct decoded_node
+{
+    char *string; /* decoded string */
+    int padding_bits; /* bits needed to decode another valid literal */
+};
 
 // Traverse the huffman tree and fill the codes_list array.
-void FillCodesList(struct MinHeapNode *root, char arr[],
-                   int top)
-
+void FillCodesList(struct MinHeapNode *root, char arr[], int top)
 {
     // Assign 0 to left edge and recur
     if (root->left)
@@ -159,13 +162,13 @@ char *calculate_huff_code(char *in_str)
      * @param size_per_thread 
      * @param padding 
      */
-    char **decode_string(struct MinHeapNode* root, char* in_string, int size_per_thread, int padding, int total_threads, int offset)
+    struct decoded_node* decode_string(struct MinHeapNode* root, char* in_string, int size_per_thread, int padding, int total_threads, int offset)
     {
         int thread_rank = omp_get_thread_num();
         struct MinHeapNode *node = root;
         int len = strlen(in_string);
         /* Pointer to different strings. There are up to 'offset' strings */
-        char **decoded_string = (char**)malloc(sizeof(char*)*offset);
+        struct decoded_node* d_node = (struct decoded_node*)malloc(sizeof(d_node)*offset);
         char *local_string;
         int initial_offset, end_offset, i, k, local_initial_offset, local_end_offset;
         initial_offset = thread_rank * size_per_thread;
@@ -173,16 +176,15 @@ char *calculate_huff_code(char *in_str)
         if(total_threads == thread_rank && padding > 0)
             end_offset += padding;
         
-        for(k=0; k<offset; k++){   
-            local_initial_offset = initial_offset + k;
-            local_end_offset = end_offset + k;
-            if(thread_rank == 0){
-                local_initial_offset = initial_offset;
-            }else if(thread_rank == total_threads){
+        
+        for(k=0; k<= offset; k++){   
+            local_initial_offset = initial_offset - k;
+            local_end_offset = end_offset + (offset - k);
+            if((thread_rank == total_threads) || (thread_rank == 0)){
                 local_end_offset = end_offset;
             }
-            printf("Thread %d L_start %d L_end %d\n", thread_rank, local_initial_offset, local_end_offset);
-            local_string = calloc(len, sizeof(char));
+            //printf("Thread %d L_start %d L_end %d\n", thread_rank, local_initial_offset, local_end_offset);
+            local_string = calloc(len + k, sizeof(char));
             int last_literal_index = 0;
             node = root;
             for(i=local_initial_offset; i<local_end_offset; i++)
@@ -199,13 +201,15 @@ char *calculate_huff_code(char *in_str)
                     last_literal_index = i;
                 }
             }
-            if((i - last_literal_index) != 1){
-                local_string = "";
+            d_node[k].string = local_string;
+            d_node[k].padding_bits = (i - last_literal_index - 1);
+            printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k].string, d_node[k].padding_bits);
+
+            if(thread_rank == 0){
+                break;
             }
-            decoded_string[k] = local_string;
-            printf("Thread [%d] string [%d]: %s\n", thread_rank, k, decoded_string[k]);
         }
-        return decoded_string;
+        return d_node;
     }
 
 // Driver code
@@ -332,13 +336,11 @@ int main()
         // the Huffman tree built above
         char arr[MAX_TREE_HT], top = 0;
 
-    #pragma omp parallel
+        #pragma omp parallel
         {
-    /* TODO check correcrness with and without nowait*/
-    #pragma omp single
+            #pragma omp single
             FillCodesList(root, arr, top);
         }
-
         for (i = 0; i < count; i++)
         {
             printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
@@ -398,35 +400,36 @@ int main()
 
     if(myrank == 0){
         printf("\n---- PARALLEL DECODING ----\n");
-        omp_set_num_threads(4);
+        omp_set_num_threads(world_size);
         double tstart, tstop;
         int len;
         len = strlen(final_string);
-        int thread_count = 4;
+        int thread_count = world_size;
         int padding = len % thread_count;
         int size_per_process = floor(len / thread_count);
-        char ***decoded_str = (char***)malloc(sizeof(char**)*thread_count);
+        struct decoded_node ** decoded_list = (struct decoded_node**)malloc(sizeof(decoded_list)* thread_count);
         char *final_decoded_string = (char*)calloc(len, sizeof(char));
         int offset = 5;
         tstart = omp_get_wtime();
         #pragma omp parallel
         {
-            decoded_str[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);    
+            decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);    
         }
-        int j, i, pos;
+        int i, bits, new_bits;
         char *temp_string;
-        for(j=0; j<offset; j++){
-            temp_string = decoded_str[0][j];
-            if(temp_string != ""){
-                strncat(final_decoded_string, temp_string, strlen(temp_string));
-                pos = j;
-                break;
-            }  
-        }
+        /* Thread 0 token */
+        temp_string = decoded_list[0][0].string;
+        bits = decoded_list[0][0].padding_bits;
+        strncat(final_decoded_string, temp_string, strlen(temp_string));
+
+        /* Other threads tokens */
         for(i=1; i<thread_count; i++){
-            temp_string = decoded_str[i][pos];
-            strncat(final_decoded_string, temp_string, strlen(temp_string));
+            temp_string = decoded_list[i][bits].string;
+            new_bits = decoded_list[i][bits].padding_bits;
+            bits = new_bits;
+            strncat(final_decoded_string, temp_string, strlen(temp_string));         
         }
+            
         tstop = omp_get_wtime();
         printf("Elapsed time: %f\n", tstop - tstart);
         printf("Parallel decode: %s\n", final_decoded_string);
