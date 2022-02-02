@@ -1,4 +1,4 @@
-#include <mpi.h>
+
 #include <stdbool.h>
 
 #ifndef FREQENCIES_H
