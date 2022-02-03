@@ -19,7 +19,7 @@
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
-#define CODES_LEN 10
+#define CODES_LEN 15
 
 // A Huffman tree node
 struct MinHeapNode
@@ -60,7 +60,7 @@ bool lookup(char s)
     }
     else if (np.name != 0)
     {
-        fprintf(stderr, "Bad lookup: %c literal hash is already used by %c!\n", s, np.name);
+        fprintf(stderr, "ERROR: Bad lookup. %c literal hash is already used by %c!\n", s, np.name);
         exit(-1);
     }
     return false; /* not found */
@@ -430,7 +430,6 @@ int main()
         len = strlen(final_string);
         int padding = len % world_size;
         int size_per_process = floor(len / world_size);
-        //printf("final string %s\n", final_string);
         double tstart, tstop;
         int offset = 5;
         int thread_count = world_size;
