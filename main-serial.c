@@ -16,7 +16,7 @@
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
-#define CODES_LEN 10
+#define CODES_LEN 15
 
 
 // A Huffman tree node
@@ -32,15 +32,18 @@ struct nlist
     char name;            /* defined char */
     char code[CODES_LEN]; /* code */
 };
+char alphabeth[] = "!#$&'()*+-.,/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVZ[]^_abcdefghijklmnopqrstuvwxyzìèéòàù{|} ";
 int size;
 struct nlist codes_list[HASHSIZE];
 
 /* hash: form hash value for char s */
 unsigned hash(char s)
 {
-    unsigned hashval;
-    hashval = s;
-    return hashval % size;
+    char *ret;
+    int idx;
+    ret = strchr(alphabeth, s);
+    idx = strlen(alphabeth) - strlen(ret);
+    return idx;
 }
 
 /* lookup: look for s in codes_list */
@@ -54,7 +57,7 @@ bool lookup(char s)
     }
     else if (np.name != 0)
     {
-        fprintf(stderr, "Bad lookup: %c literal hash is already used!\n", s);
+        fprintf(stderr, "ERROR: Bad lookup. %c literal hash is already used by %c!\n", s, np.name);
         exit(-1);
     }
     return false; /* not found */
@@ -103,7 +106,7 @@ void FillCodesList(struct MinHeapNode *root, char arr[],
         bool res = install(root->data, arr);
         if (!res)
         {
-            fprintf(stderr, "Bad install!\n");
+            fprintf(stderr, "ERROR: Bad install!\n");
             exit(-1);
         }
     }
@@ -139,22 +142,14 @@ char *calculate_huff_code(char *in_str)
 // Driver code
 int main()
 {
-  
-
-    char alphabeth[] = "ABCDEFGHIJKLMNOPQRSTUVZabcdefghijklmnopqrstuvwxyz ,";
+    size = strlen(alphabeth);
     char *input_string;
     int frequencies[sizeof(alphabeth) / sizeof(char)] = {0};
     int *out_freq;
     char *out_alphabet;
-
-    double start, finish;
-
-
-    size = strlen(alphabeth);
    
     /* Reading string from default file */
-    char local_string[INPUT_SIZE] = {""};
-    input_string = local_string;
+    input_string = (char*)calloc(sizeof(char), INPUT_SIZE);
     char default_textfile[] = "myText.txt";
     read_input_string(input_string, INPUT_SIZE, default_textfile);
 
@@ -187,14 +182,13 @@ int main()
     
     FillCodesList(root, arr, top);
 
-    for (i = 0; i< count; i++){
-        printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
-    }
+    // for (i = 0; i< count; i++){
+    //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
+    // }
 
     char *final_string;
     final_string = calculate_huff_code(input_string);
-    printf("coded string %s\n", final_string);
-
+    //printf("coded string %s\n", final_string);
     
     /* decoding */
     struct MinHeapNode *node = root;
@@ -213,5 +207,6 @@ int main()
             node = root;
         }
     }
+    printf("decoded string %s\n", decoded_string);
     return 0;
 }

@@ -65,6 +65,10 @@ void calculate_frequencies(char *alphabeth, char *input_string, int *out_buffer)
     for (i = 0; i < strlen(input_string); i++)
     {
         ret = strchr(alphabeth, input_string[i]);
+        if (ret == NULL){
+            fprintf(stderr, "ERROR: character not found in the alphabet!\n");
+            exit(-1);
+        }
         idx = strlen(alphabeth) - strlen(ret);
         out_buffer[idx] += 1;
     }

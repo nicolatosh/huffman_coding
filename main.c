@@ -11,15 +11,15 @@
 #include "tree_utils.h"
 #include "frequencies_utils.h"
 
-#define RECV_SIZE 200000
-#define INPUT_SIZE 200000
+#define RECV_SIZE 20000
+#define INPUT_SIZE 20000
 #define REALLOC_OFFSET 5
 
 // This constant can be avoided by explicitly
 // calculating height of Huffman Tree
 #define MAX_TREE_HT 100
 #define HASHSIZE 100
-#define CODES_LEN 10
+#define CODES_LEN 15
 
 // A Huffman tree node
 struct MinHeapNode
@@ -34,15 +34,19 @@ struct nlist
     char name;            /* defined char */
     char code[CODES_LEN]; /* code */
 };
+char alphabeth[] = "!#$&'()*+-.,/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVZ[]^_abcdefghijklmnopqrstuvwxyz{|} ";
 int size;
 struct nlist codes_list[HASHSIZE];
 
 /* hash: form hash value for char s */
 unsigned hash(char s)
 {
-    unsigned hashval;
-    hashval = s;
-    return hashval % size;
+    char *ret;
+    int idx;
+    ret = strchr(alphabeth, s);
+    idx = strlen(alphabeth) - strlen(ret);
+    return idx;
+    
 }
 
 /* lookup: look for s in codes_list */
@@ -56,7 +60,7 @@ bool lookup(char s)
     }
     else if (np.name != 0)
     {
-        fprintf(stderr, "Bad lookup: %c literal hash is already used!\n", s);
+        fprintf(stderr, "ERROR: Bad lookup. %c literal hash is already used by %c!\n", s, np.name);
         exit(-1);
     }
     return false; /* not found */
@@ -88,10 +92,10 @@ void FillCodesList(struct MinHeapNode *root, char arr[], int top)
     // Assign 0 to left edge and recur
     if (root->left)
     {
-#pragma omp task shared(arr, top) firstprivate(root) depend(out \
+    #pragma omp task shared(arr, top) firstprivate(root) depend(out \
                                                             : top)
         {
-#pragma omp critical
+        #pragma omp critical
             arr[top] = '0';
 
             FillCodesList(root->left, arr, top + 1);
@@ -101,31 +105,31 @@ void FillCodesList(struct MinHeapNode *root, char arr[], int top)
     // Assign 1 to right edge and recur
     if (root->right)
     {
-#pragma omp task shared(arr, top) firstprivate(root) depend(in \
+    #pragma omp task shared(arr, top) firstprivate(root) depend(in \
                                                             : top)
         {
-#pragma omp critical
+        #pragma omp critical
             arr[top] = '1';
 
             FillCodesList(root->right, arr, top + 1);
         }
     }
 
-// If this is a leaf node, then
-// it contains one of the input
-// characters, print the character
-// and its code from arr[]
-#pragma omp taskwait
-    if (isLeaf(root))
-    {
-        arr[top] = '\0';
-        bool res = install(root->data, arr);
-        if (!res)
+    // If this is a leaf node, then
+    // it contains one of the input
+    // characters, print the character
+    // and its code from arr[]
+    #pragma omp taskwait
+        if (isLeaf(root))
         {
-            fprintf(stderr, "Bad install!\n");
-            exit(-1);
+            arr[top] = '\0';
+            bool res = install(root->data, arr);
+            if (!res)
+            {
+                fprintf(stderr, "Bad install!\n");
+                exit(-1);
+            }
         }
-    }
 }
 
 /**
@@ -228,7 +232,6 @@ int main()
     int myrank;
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
-    char alphabeth[] = "ABCDEFGHIJKLMNOPQRSTUVZabcdefghijklmnopqrstuvwxyz ,";
     char *input_string;
     int frequencies[sizeof(alphabeth) / sizeof(char)] = {0};
     int reduce_buff[sizeof(alphabeth) / sizeof(char)] = {0};
@@ -238,6 +241,7 @@ int main()
     int *displs;
     int *sendcount;
     char start_scatter = '0';
+    size = strlen(alphabeth);
 
     double start, finish;
 
@@ -255,14 +259,11 @@ int main()
     MPI_Type_contiguous(HASHSIZE, mpi_codeblock, &mpi_codelist);
     MPI_Type_commit(&mpi_codelist);
 
-    size = strlen(alphabeth);
     if (myrank == 0)
     {
-
         /* Reading string from default file */
-        char local_string[INPUT_SIZE] = {""};
-        input_string = local_string;
-        char default_textfile[] = "input.txt";
+        input_string = (char*)calloc(sizeof(char), INPUT_SIZE);
+        char default_textfile[] = "myText.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -289,6 +290,7 @@ int main()
                 k += size_per_process;
             }
         }
+        
     }
 
     if (myrank == 0)
@@ -301,12 +303,15 @@ int main()
         MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
         calculate_frequencies(alphabeth, recv_buff, frequencies);
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        
     }else if (myrank == 0){
         /*Otherwise only process 0 calculate the frequences for the entire string */
         calculate_frequencies(alphabeth, input_string, reduce_buff);
         strncpy(recv_buff, input_string, strlen(input_string));
     }
-
+    
+    free(displs);
+    free(sendcount);
     //printf("process %d string %s\n", myrank, recv_buff);
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -330,28 +335,35 @@ int main()
         }
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
-
+        
         /* Build huff tree */
         root = HuffmanCodes(out_alphabet, out_freq, count);
+        free(out_alphabet);
+        free(out_freq);
+
         printf("-------\n");
+        
 
         // Print Huffman codes using
         // the Huffman tree built above
         char arr[MAX_TREE_HT], top = 0;
 
-#pragma omp parallel
+        #pragma omp parallel
         {
-#pragma omp single
+            #pragma omp single
             FillCodesList(root, arr, top);
         }
+                
         // for (i = 0; i < count; i++)
         // {
         //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
         // }
     }
+    
 
     /* Sending code-table to all processes */
     MPI_Bcast(codes_list, 1, mpi_codelist, 0, MPI_COMM_WORLD);
+    
 
     char *out, *final_string;
     out = calculate_huff_code(recv_buff);
@@ -412,15 +424,12 @@ int main()
         }
         //printf("serial decoded string %s\n", decoded_string);
     }
-
-    if (myrank == 0)
-    {
+    if(myrank == 0){
         printf("\n---- PARALLEL DECODING ----\n");
-        int len;
+        int len, i; 
         len = strlen(final_string);
         int padding = len % world_size;
         int size_per_process = floor(len / world_size);
-        //printf("final string %s\n", final_string);
         double tstart, tstop;
         int offset = 5;
         int thread_count = world_size;
@@ -439,7 +448,9 @@ int main()
         {
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
+
         int i, bits;
+        tstop = omp_get_wtime();
         char *temp_string;
         /* Thread 0 token */
         temp_string = decoded_list[0][0].string;
@@ -475,9 +486,15 @@ int main()
         
         tstop = omp_get_wtime();
         printf("Elapsed time: %f\n", tstop - tstart);
-        //printf("Parallel decoded string: %s\n", final_decoded_string);
+
+        int res = strcmp(input_string, final_decoded_string);
+        printf("res: [%d]\n", res);
+        free(final_decoded_string);
+        free(decoded_list);
     }
 
+    free(final_string);
+    free(input_string);
     // Finalize the MPI environment.
     MPI_Type_free(&mpi_codelist);
     MPI_Type_free(&mpi_codeblock);
