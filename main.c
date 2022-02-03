@@ -161,14 +161,13 @@ char *calculate_huff_code(char *in_str)
      * @param size_per_thread 
      * @param padding 
      */
-struct decoded_node **decode_string(struct MinHeapNode *root, char *in_string, int size_per_thread, int padding, int total_threads, int offset)
+struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, int size_per_thread, int padding, int total_threads, int offset)
 {
     int thread_rank = omp_get_thread_num();
     struct MinHeapNode *node = root;
     int len = strlen(in_string);
     /* Pointer to different strings. There are up to 'offset' strings */
-    struct decoded_node **d_node = (struct decoded_node **)malloc(sizeof(d_node) * offset);
-    struct decoded_node *current_node;
+    struct decoded_node *d_node = (struct decoded_node *)malloc(sizeof(d_node) * offset);
     char *local_string;
     int initial_offset, end_offset, i, k, local_initial_offset;
     initial_offset = thread_rank * size_per_thread;
@@ -201,14 +200,13 @@ struct decoded_node **decode_string(struct MinHeapNode *root, char *in_string, i
                 last_literal_index = i;
             }
         }
-        current_node = (struct decoded_node*)malloc(sizeof(current_node));
-        current_node->string = local_string;
-        current_node->padding_bits = (i - last_literal_index - 1);
-        d_node[k] = current_node;
-        // d_node[k].string = local_string;
-        // d_node[k].padding_bits = (i - last_literal_index - 1);
 
-        printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k]->string, d_node[k]->padding_bits);
+        d_node[k].string = (char *)malloc(sizeof(char)*len);
+        strncpy(d_node[k].string, local_string, len);
+        d_node[k].padding_bits = (i - last_literal_index - 1);
+        
+
+        printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k].string, d_node[k].padding_bits);
 
         if (thread_rank == 0)
         {
@@ -216,7 +214,6 @@ struct decoded_node **decode_string(struct MinHeapNode *root, char *in_string, i
         }
 
     }
-
     
     return d_node;
 }
@@ -269,7 +266,7 @@ int main()
         /* Reading string from default file */
         char local_string[INPUT_SIZE] = {""};
         input_string = local_string;
-        char default_textfile[] = "input.txt";
+        char default_textfile[] = "myText.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -413,16 +410,23 @@ int main()
     if (myrank == 0)
     {
         printf("\n---- PARALLEL DECODING ----\n");
-        omp_set_num_threads(world_size);
         double tstart, tstop;
         int len;
         len = strlen(final_string);
-        int thread_count = world_size;
-        int padding = len % thread_count;
-        int size_per_process = floor(len / thread_count);
-        struct decoded_node ***decoded_list = (struct decoded_node ***)malloc(sizeof(decoded_list) * thread_count);
-        char *final_decoded_string = (char *)calloc(len, sizeof(char));
+        int padding = len % world_size;
+        int size_per_process = floor(len / world_size);
+        printf("size per process %d padding %d\n", size_per_process, padding);
         int offset = 5;
+        int thread_count = world_size;
+        omp_set_num_threads(world_size);
+        if (size_per_process < offset){
+            printf("true\n");
+            thread_count = 1;
+            omp_set_num_threads(1);
+            size_per_process = len;
+        }
+        struct decoded_node **decoded_list = (struct decoded_node **)malloc(sizeof(decoded_list) * thread_count);
+        char *final_decoded_string = (char *)calloc(len, sizeof(char));
         tstart = omp_get_wtime();
         #pragma omp parallel
         {
@@ -431,16 +435,16 @@ int main()
         int i, bits, new_bits;
         char *temp_string;
         /* Thread 0 token */
-        temp_string = decoded_list[0][0][0].string;
-        bits = decoded_list[0][0][0].padding_bits;
+        temp_string = decoded_list[0][0].string;
+        bits = decoded_list[0][0].padding_bits;
         strncat(final_decoded_string, temp_string, strlen(temp_string));
         
         
         /* Other threads tokens */
         for (i = 1; i < thread_count; i++)
         {
-            temp_string = decoded_list[i][bits][0].string;
-            new_bits = decoded_list[i][bits][0].padding_bits;
+            temp_string = decoded_list[i][bits].string;
+            new_bits = decoded_list[i][bits].padding_bits;
             bits = new_bits;
             strncat(final_decoded_string, temp_string, strlen(temp_string));
         }
