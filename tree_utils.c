@@ -234,9 +234,10 @@ struct MinHeap *createAndBuildMinHeap(char data[],
 
 {
 
+    int i;
     struct MinHeap *minHeap = createMinHeap(size);
 
-    for (int i = 0; i < size; ++i)
+    for (i = 0; i < size; ++i)
         minHeap->array[i] = newNode(data[i], freq[i]);
 
     minHeap->size = size;
