@@ -11,8 +11,8 @@
 #include "tree_utils.h"
 #include "frequencies_utils.h"
 
-#define RECV_SIZE 2000
-#define INPUT_SIZE 2000
+#define RECV_SIZE 200000
+#define INPUT_SIZE 200000
 #define REALLOC_OFFSET 5
 
 // This constant can be avoided by explicitly
@@ -178,7 +178,6 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
     for (k = 0; k < offset; k++)
     {
         local_initial_offset = initial_offset - k;
-        //printf("Thread %d L_start %d L_end %d\n", thread_rank, local_initial_offset, local_end_offset);
         local_string = calloc(len, sizeof(char));
         int last_literal_index = 0;
         node = root;
@@ -200,12 +199,11 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
                 last_literal_index = i;
             }
         }
-
-        d_node[k].string = (char *)malloc(sizeof(char) * len);
+        d_node[k].string = (char *)calloc(sizeof(char), len);
         strncpy(d_node[k].string, local_string, len);
         d_node[k].padding_bits = (i - last_literal_index - 1);
 
-        printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k].string, d_node[k].padding_bits);
+       // printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k].string, d_node[k].padding_bits);
 
         if (thread_rank == 0)
         {
@@ -264,7 +262,7 @@ int main()
         /* Reading string from default file */
         char local_string[INPUT_SIZE] = {""};
         input_string = local_string;
-        char default_textfile[] = "myText.txt";
+        char default_textfile[] = "input.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -272,7 +270,7 @@ int main()
         int padding = input_size % world_size;
         int size_per_process = floor(input_size / world_size);
         int k = 0, i = 0;
-        /* Initializing scatter params */
+        /* Initializing scatter params in case the size can be divided into the processes */
         if (input_size > world_size)
         {
             start_scatter = '1';
@@ -293,19 +291,23 @@ int main()
         }
     }
 
-    start = MPI_Wtime();
+    if (myrank == 0)
+        start = MPI_Wtime();
+
     MPI_Bcast(&start_scatter, 1, MPI_CHAR, 0, MPI_COMM_WORLD);
+    /*MPI_Scatterv and MPI_Reduce are done only if the input can be divided into processes. */
     if (start_scatter == '1')
     {
         MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
         calculate_frequencies(alphabeth, recv_buff, frequencies);
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
     }else if (myrank == 0){
+        /*Otherwise only process 0 calculate the frequences for the entire string */
         calculate_frequencies(alphabeth, input_string, reduce_buff);
         strncpy(recv_buff, input_string, strlen(input_string));
     }
 
-    printf("process %d string %s\n", myrank, recv_buff);
+    //printf("process %d string %s\n", myrank, recv_buff);
 
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -342,10 +344,10 @@ int main()
 #pragma omp single
             FillCodesList(root, arr, top);
         }
-        for (i = 0; i < count; i++)
-        {
-            printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
-        }
+        // for (i = 0; i < count; i++)
+        // {
+        //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
+        // }
     }
 
     /* Sending code-table to all processes */
@@ -354,7 +356,7 @@ int main()
     char *out, *final_string;
     out = calculate_huff_code(recv_buff);
 
-    /* When scatter equals to 1 process 0 collect with a gatherv all the encoded string from the other processes. */
+    /* When scatter equals to 1 process 0 collect with a MPO_Gatherv all the encoded string from the other processes. */
     if (start_scatter == '1')
     {
         int counts[world_size], gather_disps[world_size], i;
@@ -375,13 +377,12 @@ int main()
         strncpy(final_string, out, strlen(out));
     }
     
-    finish = MPI_Wtime();
     
     /*In any case process 0 print the actual encoded final_string value */
     if (myrank == 0)
     {
+        finish = MPI_Wtime();
         printf("Total execution time: %e\n", finish - start);
-        printf("FINAL: %s\n", final_string);
     }
 
     /* Serial decoding */
@@ -409,27 +410,27 @@ int main()
                 node = root;
             }
         }
-        printf("serial decoded string %s\n", decoded_string);
+        //printf("serial decoded string %s\n", decoded_string);
     }
 
     if (myrank == 0)
     {
         printf("\n---- PARALLEL DECODING ----\n");
-        double tstart, tstop;
         int len;
         len = strlen(final_string);
         int padding = len % world_size;
         int size_per_process = floor(len / world_size);
-        printf("size per process %d padding %d\n", size_per_process, padding);
+        //printf("final string %s\n", final_string);
+        double tstart, tstop;
         int offset = 5;
         int thread_count = world_size;
         omp_set_num_threads(world_size);
         if (size_per_process < offset)
         {
-            printf("true\n");
             thread_count = 1;
             omp_set_num_threads(1);
             size_per_process = len;
+            padding = 0;
         }
         struct decoded_node **decoded_list = (struct decoded_node **)malloc(sizeof(decoded_list) * thread_count);
         char *final_decoded_string = (char *)calloc(len, sizeof(char));
@@ -438,6 +439,7 @@ int main()
         {
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
+        tstop = omp_get_wtime();
         int i, bits, new_bits;
         char *temp_string;
         /* Thread 0 token */
@@ -454,9 +456,8 @@ int main()
             strncat(final_decoded_string, temp_string, strlen(temp_string));
         }
 
-        tstop = omp_get_wtime();
-        printf("Elapsed time: %f\n", tstop - tstart);
-        printf("Parallel decode: %s\n", final_decoded_string);
+        //printf("Elapsed time: %f\n", tstop - tstart);
+        //printf("Parallel decoded string: %s\n", final_decoded_string);
     }
 
     // Finalize the MPI environment.
