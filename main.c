@@ -435,11 +435,10 @@ int main()
         struct decoded_node **decoded_list = (struct decoded_node **)malloc(sizeof(decoded_list) * thread_count);
         char *final_decoded_string = (char *)calloc(len, sizeof(char));
         tstart = omp_get_wtime();
-#pragma omp parallel
+        #pragma omp parallel
         {
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
-        tstop = omp_get_wtime();
         int i, bits, new_bits;
         char *temp_string;
         /* Thread 0 token */
@@ -448,15 +447,34 @@ int main()
         strncat(final_decoded_string, temp_string, strlen(temp_string));
 
         /* Other threads tokens */
-        for (i = 1; i < thread_count; i++)
-        {
-            temp_string = decoded_list[i][bits].string;
-            new_bits = decoded_list[i][bits].padding_bits;
-            bits = new_bits;
-            strncat(final_decoded_string, temp_string, strlen(temp_string));
-        }
+        /* Anti-dependence */
+        // for (i = 1; i < thread_count; i++)
+        // {
+        //     temp_string = decoded_list[i][bits].string;
+        //     new_bits = decoded_list[i][bits].padding_bits;
+        //     bits = new_bits;
+        //     strncat(final_decoded_string, temp_string, strlen(temp_string));
+        // }
 
-        //printf("Elapsed time: %f\n", tstop - tstart);
+        /* Other threads tokens */
+        /* Anti-dependence removed */
+        int *bits_array[thread_count];
+        #pragma omp parallel for shared(bits_array)
+            for (i = 1; i < thread_count; i++)
+            {
+                bits_array[i] = decoded_list[i][bits].padding_bits;
+            }
+        
+        #pragma omp parallel for shared(final_decoded_string) private(temp_string)
+            for (i = 1; i < thread_count; i++)
+            {
+                temp_string = decoded_list[i][bits].string;
+                #pragma omp critical
+                strncat(final_decoded_string, temp_string, strlen(temp_string));
+            }
+        
+        tstop = omp_get_wtime();
+        printf("Elapsed time: %f\n", tstop - tstart);
         //printf("Parallel decoded string: %s\n", final_decoded_string);
     }
 
