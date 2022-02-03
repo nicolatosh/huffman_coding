@@ -310,6 +310,8 @@ int main()
         strncpy(recv_buff, input_string, strlen(input_string));
     }
     
+    free(displs);
+    free(sendcount);
     //printf("process %d string %s\n", myrank, recv_buff);
 
     MPI_Barrier(MPI_COMM_WORLD);
@@ -336,6 +338,9 @@ int main()
         
         /* Build huff tree */
         root = HuffmanCodes(out_alphabet, out_freq, count);
+        free(out_alphabet);
+        free(out_freq);
+
         printf("-------\n");
         
 
@@ -465,8 +470,12 @@ int main()
 
         int res = strcmp(input_string, final_decoded_string);
         printf("res: [%d]\n", res);
+        free(final_decoded_string);
+        free(decoded_list);
     }
 
+    free(final_string);
+    free(input_string);
     // Finalize the MPI environment.
     MPI_Type_free(&mpi_codelist);
     MPI_Type_free(&mpi_codeblock);
