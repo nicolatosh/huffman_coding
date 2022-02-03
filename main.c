@@ -439,7 +439,7 @@ int main()
         {
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
-        int i, bits, new_bits;
+        int i, bits;
         char *temp_string;
         /* Thread 0 token */
         temp_string = decoded_list[0][0].string;
@@ -458,7 +458,7 @@ int main()
 
         /* Other threads tokens */
         /* Anti-dependence removed */
-        int *bits_array[thread_count];
+        int bits_array[thread_count];
         #pragma omp parallel for shared(bits_array)
             for (i = 1; i < thread_count; i++)
             {
@@ -468,7 +468,7 @@ int main()
         #pragma omp parallel for shared(final_decoded_string) private(temp_string)
             for (i = 1; i < thread_count; i++)
             {
-                temp_string = decoded_list[i][bits].string;
+                temp_string = decoded_list[i][bits_array[i]].string;
                 #pragma omp critical
                 strncat(final_decoded_string, temp_string, strlen(temp_string));
             }
