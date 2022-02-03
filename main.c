@@ -179,7 +179,7 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
     {
         local_initial_offset = initial_offset - k;
         //printf("Thread %d L_start %d L_end %d\n", thread_rank, local_initial_offset, local_end_offset);
-        local_string = calloc(len , sizeof(char));
+        local_string = calloc(len, sizeof(char));
         int last_literal_index = 0;
         node = root;
         for (i = local_initial_offset; i < end_offset; i++)
@@ -201,10 +201,9 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
             }
         }
 
-        d_node[k].string = (char *)malloc(sizeof(char)*len);
+        d_node[k].string = (char *)malloc(sizeof(char) * len);
         strncpy(d_node[k].string, local_string, len);
         d_node[k].padding_bits = (i - last_literal_index - 1);
-        
 
         printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k].string, d_node[k].padding_bits);
 
@@ -212,9 +211,8 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
         {
             break;
         }
-
     }
-    
+
     return d_node;
 }
 
@@ -275,11 +273,7 @@ int main()
         int size_per_process = floor(input_size / world_size);
         int k = 0, i = 0;
         /* Initializing scatter params */
-        if (input_size < world_size)
-        {
-            calculate_frequencies(alphabeth, input_string, reduce_buff);
-        }
-        else
+        if (input_size > world_size)
         {
             start_scatter = '1';
             displs = malloc(world_size * sizeof(int));
@@ -306,6 +300,9 @@ int main()
         MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
         calculate_frequencies(alphabeth, recv_buff, frequencies);
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+    }else if (myrank == 0){
+        calculate_frequencies(alphabeth, input_string, reduce_buff);
+        strncpy(recv_buff, input_string, strlen(input_string));
     }
 
     printf("process %d string %s\n", myrank, recv_buff);
@@ -331,8 +328,6 @@ int main()
         }
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
-        finish = MPI_Wtime();
-        printf("Total execution time: %e\n", finish - start);
 
         /* Build huff tree */
         root = HuffmanCodes(out_alphabet, out_freq, count);
@@ -359,7 +354,7 @@ int main()
     char *out, *final_string;
     out = calculate_huff_code(recv_buff);
 
-    /* Encoding with huff codes */
+    /* When scatter equals to 1 process 0 collect with a gatherv all the encoded string from the other processes. */
     if (start_scatter == '1')
     {
         int counts[world_size], gather_disps[world_size], i;
@@ -373,10 +368,20 @@ int main()
 
         MPI_Gatherv(out, nelem, MPI_CHAR, final_string, counts, gather_disps, MPI_CHAR, 0, MPI_COMM_WORLD);
         MPI_Barrier(MPI_COMM_WORLD);
-        if (myrank == 0)
-        {
-            printf("FINAL: %s\n", final_string);
-        }
+    }else if(myrank == 0){
+        /*Otherwise the process 0 don't collect anything from other process and set final_string variable with
+         the content of out */
+        final_string = (char *)calloc(strlen(out), sizeof(char));
+        strncpy(final_string, out, strlen(out));
+    }
+    
+    finish = MPI_Wtime();
+    
+    /*In any case process 0 print the actual encoded final_string value */
+    if (myrank == 0)
+    {
+        printf("Total execution time: %e\n", finish - start);
+        printf("FINAL: %s\n", final_string);
     }
 
     /* Serial decoding */
@@ -419,7 +424,8 @@ int main()
         int offset = 5;
         int thread_count = world_size;
         omp_set_num_threads(world_size);
-        if (size_per_process < offset){
+        if (size_per_process < offset)
+        {
             printf("true\n");
             thread_count = 1;
             omp_set_num_threads(1);
@@ -428,7 +434,7 @@ int main()
         struct decoded_node **decoded_list = (struct decoded_node **)malloc(sizeof(decoded_list) * thread_count);
         char *final_decoded_string = (char *)calloc(len, sizeof(char));
         tstart = omp_get_wtime();
-        #pragma omp parallel
+#pragma omp parallel
         {
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
@@ -438,8 +444,7 @@ int main()
         temp_string = decoded_list[0][0].string;
         bits = decoded_list[0][0].padding_bits;
         strncat(final_decoded_string, temp_string, strlen(temp_string));
-        
-        
+
         /* Other threads tokens */
         for (i = 1; i < thread_count; i++)
         {
