@@ -182,6 +182,8 @@ int main()
     
     FillCodesList(root, arr, top);
 
+    free(out_freq);
+    free(out_alphabet);
     // for (i = 0; i< count; i++){
     //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
     // }
@@ -208,5 +210,7 @@ int main()
         }
     }
     printf("decoded string %s\n", decoded_string);
+    free(decoded_string);
+    free(input_string);
     return 0;
 }
