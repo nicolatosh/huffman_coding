@@ -1,4 +1,12 @@
-// C program for Huffman Coding
+/**
+ * Program that includes parallel encoding and decoding of Huffman algorithm
+ * @file main.c
+ * @author Nicola Arpino, Alessandra Morellini
+ * @brief 
+ * @version 1.1
+ * @date 2022-02-04
+ * 
+ */
 
 #include <mpi.h>
 #include <omp.h>
@@ -11,17 +19,29 @@
 #include "tree_utils.h"
 #include "frequencies_utils.h"
 
-#define RECV_SIZE 20000
-#define INPUT_SIZE 20000
-#define REALLOC_OFFSET 5
+/* Configuration of constants */
 
-// This constant can be avoided by explicitly
-// calculating height of Huffman Tree
-#define MAX_TREE_HT 100
-#define HASHSIZE 100
+/* Make sure RECV_SIZE and INPUT_SIZE are equals */
+/* Their value is the max size of the string that can be read */
+#define RECV_SIZE 200000
+#define INPUT_SIZE 200000
+
+/* This number should be calculated as "log2(length of alphabet)"
+/* It is an upper-bound and represents  */
+#define SYMBOL_MAX_BITS 5
+
+/* Length of a single-code. Must be at least as SYMBOL_MAX_BITS */
 #define CODES_LEN 15
 
-// A Huffman tree node
+
+/* Those constants comes from original Min-heap algorithm. */
+#define MAX_TREE_HT 100
+#define HASHSIZE 100
+
+/* This is the alphabet. If input-string contains additional characters, put them here */
+char alphabeth[] = "!#$&'()*+-.,/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVZ[]^_abcdefghijklmnopqrstuvwxyz{|} ";
+
+/* A Huffman tree node */
 struct MinHeapNode
 {
     char data;                        /* defined char */
@@ -34,11 +54,10 @@ struct nlist
     char name;            /* defined char */
     char code[CODES_LEN]; /* code */
 };
-char alphabeth[] = "!#$&'()*+-.,/0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVZ[]^_abcdefghijklmnopqrstuvwxyz{|} ";
 int size;
 struct nlist codes_list[HASHSIZE];
 
-/* hash: form hash value for char s */
+/* hash: returns the hash value for char s */
 unsigned hash(char s)
 {
     char *ret;
@@ -80,56 +99,89 @@ bool install(char name, char *code)
     return false;
 }
 
+/* This node is used into decoding phase. See 'decoded_node()' function */ 
 struct decoded_node
 {
     char *string;     /* decoded string */
     int padding_bits; /* bits needed to decode another valid literal */
 };
 
-// Traverse the huffman tree and fill the codes_list array.
+/* Parallel function task based to create the code-word table */
+
+// void FillCodesList(struct MinHeapNode *root, char arr[], int top)
+// {
+//     // Assign 0 to left edge and recur
+//     if (root->left)
+//     {
+//         #pragma omp task firstprivate(root, arr, top) depend(out: top)
+//         {
+//             #pragma omp critical
+//                 arr[top] = '0';
+
+//             FillCodesList(root->left, arr, top + 1);
+//         }
+//     }
+
+//     // Assign 1 to right edge and recur
+//     if (root->right)
+//     {
+//         #pragma omp task firstprivate(root, arr, top) depend(in: top)
+//         {
+//             #pragma omp critical
+//                 arr[top] = '1';
+
+//             FillCodesList(root->right, arr, top + 1);
+//         }
+//     }
+
+//     // If this is a leaf node, then
+//     // it contains one of the input
+//     // characters, print the character
+//     // and its code from arr[]
+//     #pragma omp taskwait
+//     if (isLeaf(root))
+//     {
+//         arr[top] = '\0';
+//         bool res = install(root->data, arr);
+//         if (!res)
+//         {
+//             fprintf(stderr, "Bad install!\n");
+//             exit(-1);
+//         }
+//     }
+// }
+
+/* Serial function to create the code-word table */
 void FillCodesList(struct MinHeapNode *root, char arr[], int top)
 {
     // Assign 0 to left edge and recur
     if (root->left)
     {
-    #pragma omp task shared(arr, top) firstprivate(root) depend(out \
-                                                            : top)
-        {
-        #pragma omp critical
-            arr[top] = '0';
-
-            FillCodesList(root->left, arr, top + 1);
-        }
+        arr[top] = '0';
+        FillCodesList(root->left, arr, top + 1);
     }
 
     // Assign 1 to right edge and recur
     if (root->right)
     {
-    #pragma omp task shared(arr, top) firstprivate(root) depend(in \
-                                                            : top)
-        {
-        #pragma omp critical
-            arr[top] = '1';
-
-            FillCodesList(root->right, arr, top + 1);
-        }
+        arr[top] = '1';
+        FillCodesList(root->right, arr, top + 1); 
     }
 
     // If this is a leaf node, then
     // it contains one of the input
     // characters, print the character
     // and its code from arr[]
-    #pragma omp taskwait
-        if (isLeaf(root))
+    if (isLeaf(root))
+    {
+        arr[top] = '\0';
+        bool res = install(root->data, arr);
+        if (!res)
         {
-            arr[top] = '\0';
-            bool res = install(root->data, arr);
-            if (!res)
-            {
-                fprintf(stderr, "Bad install!\n");
-                exit(-1);
-            }
+            fprintf(stderr, "Bad install!\n");
+            exit(-1);
         }
+    }
 }
 
 /**
@@ -149,7 +201,7 @@ char *calculate_huff_code(char *in_str)
         code_len = strlen(code);
         if ((buff_len - strlen(out_string)) <= code_len)
         {
-            buff_len += (code_len * REALLOC_OFFSET);
+            buff_len += (code_len * SYMBOL_MAX_BITS);
             out_string = (char *)realloc(out_string, buff_len);
         }
         strcat(out_string, code);
@@ -158,29 +210,38 @@ char *calculate_huff_code(char *in_str)
 }
 
 /**
-     * @brief 
-     * 
-     * @param root 
-     * @param in_string 
-     * @param size_per_thread 
-     * @param padding 
-     */
+ * @brief Function to decode a piece of string. Called within parallel region.
+ * 
+ * @param root root of Huff tree
+ * @param in_string input string
+ * @param size_per_thread how much of the string to manage
+ * @param padding extra padding
+ * @param total_threads how many threads are available in total
+ * @param offset how much overlap between decoded strings of different threads
+ * @return struct decoded_node* 
+ */
 struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, int size_per_thread, int padding, int total_threads, int offset)
 {
+    /* Myrank */
     int thread_rank = omp_get_thread_num();
     struct MinHeapNode *node = root;
     int len = strlen(in_string);
-    /* Pointer to different strings. There are up to 'offset' strings */
+    /* Pointer to different nodes. There are up to 'offset' nodes */
+    /* Each thread will have 'offset' number of different decoded strings */
     struct decoded_node *d_node = (struct decoded_node *)malloc(sizeof(d_node) * offset);
     char *local_string;
     int initial_offset, end_offset, i, k, local_initial_offset;
     initial_offset = thread_rank * size_per_thread;
     end_offset = initial_offset + size_per_thread;
+
+    /* Last thread will manage also padding */
     if (total_threads == thread_rank && padding > 0)
         end_offset += padding;
 
+    /* Each thread will decode many candidate decode-strings. How many? up to 'offset' */
     for (k = 0; k < offset; k++)
     {
+        /* Those indices makes the ovelapping strategy for each thread */
         local_initial_offset = initial_offset - k;
         local_string = calloc(len, sizeof(char));
         int last_literal_index = 0;
@@ -207,8 +268,7 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
         strncpy(d_node[k].string, local_string, len);
         d_node[k].padding_bits = (i - last_literal_index - 1);
 
-       // printf("Thread [%d] string [%d]: %s bits: %d\n", thread_rank, k, d_node[k].string, d_node[k].padding_bits);
-
+        /* Thread 0, since started from beginning produces only one string */
         if (thread_rank == 0)
         {
             break;
@@ -218,7 +278,7 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
     return d_node;
 }
 
-// Driver code
+/* Main code */
 int main()
 {
     // Initialize the MPI environment
@@ -243,9 +303,13 @@ int main()
     char start_scatter = '0';
     size = strlen(alphabeth);
 
+    /* Timing data */
     double start, finish;
 
-    /* Derived datatype for struct */
+    /* Derived datatype for struct 'mpi_codeblock' */
+    /* This is needed in order to be able to send 
+    * decoded candidate nodes to a collector (Process 0)
+    */
     const int nitems = 2;
     int blocklengths[2] = {1, CODES_LEN};
     MPI_Datatype types[2] = {MPI_CHAR, MPI_CHAR};
@@ -259,11 +323,17 @@ int main()
     MPI_Type_contiguous(HASHSIZE, mpi_codeblock, &mpi_codelist);
     MPI_Type_commit(&mpi_codelist);
 
+    /* Here actual program starts. The MPI process 0 will:
+    *   1) Read the input from file.
+    *   2) Calculate how much substring should each other process manage.
+    *   3) Send a piece of string to each other process (ScatterV).
+    *   4) Takes time for the whole encoding operation (tree building + encoding)
+    */
     if (myrank == 0)
     {
         /* Reading string from default file */
         input_string = (char*)calloc(sizeof(char), INPUT_SIZE);
-        char default_textfile[] = "myText.txt";
+        char default_textfile[] = "input.txt";
         read_input_string(input_string, INPUT_SIZE, default_textfile);
 
         /* Calculating substing per process */
@@ -280,7 +350,6 @@ int main()
             for (i = 0; i < world_size; i++)
             {
                 /* Last process will receive also the padding */
-
                 if (i == (world_size - 1))
                     sendcount[i] = size_per_process + padding;
                 else
@@ -293,11 +362,12 @@ int main()
         
     }
 
+    /* Process 0 starts timer for measuring encoding time */
     if (myrank == 0)
         start = MPI_Wtime();
 
     MPI_Bcast(&start_scatter, 1, MPI_CHAR, 0, MPI_COMM_WORLD);
-    /*MPI_Scatterv and MPI_Reduce are done only if the input can be divided into processes. */
+    /*MPI_Scatterv and MPI_Reduce are done only if the input can be divided into processes */
     if (start_scatter == '1')
     {
         MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
@@ -305,19 +375,19 @@ int main()
         MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
         
     }else if (myrank == 0){
-        /*Otherwise only process 0 calculate the frequences for the entire string */
+        /* Otherwise only process 0 calculates the frequences for the entire string */
+        /* This situation may happen when the input string is very short */
         calculate_frequencies(alphabeth, input_string, reduce_buff);
         strncpy(recv_buff, input_string, strlen(input_string));
     }
-    
     free(displs);
     free(sendcount);
-    //printf("process %d string %s\n", myrank, recv_buff);
 
+    /* Waiting every process to complete frequencies calculation */
     MPI_Barrier(MPI_COMM_WORLD);
 
     struct MinHeapNode *root;
-    /* Process 0 takes care of preparing alphabeth and frequencies output arrays */
+    /* Process 0 takes care of preparing alphabet and frequencies output arrays */
     if (myrank == 0)
     {
         int len = strlen(alphabeth);
@@ -336,32 +406,30 @@ int main()
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
         
-        /* Build huff tree */
+        /* Build Huff-tree */
         root = HuffmanCodes(out_alphabet, out_freq, count);
         free(out_alphabet);
         free(out_freq);
 
-        printf("-------\n");
-        
+        char arr[MAX_TREE_HT];
+        int top = 0;
 
-        // Print Huffman codes using
-        // the Huffman tree built above
-        char arr[MAX_TREE_HT], top = 0;
 
-        #pragma omp parallel
+        #pragma omp parallel num_threads(2)
         {
-            #pragma omp single
-            FillCodesList(root, arr, top);
+            if(omp_get_thread_num() == 0){
+                arr[top] = '1';
+                FillCodesList(root->right, arr, top + 1);
+            }else{
+                arr[top] = '0';
+                FillCodesList(root->left, arr, top + 1);
+            }
         }
-                
-        // for (i = 0; i < count; i++)
-        // {
-        //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
-        // }
     }
     
 
-    /* Sending code-table to all processes */
+    /* Sending code-word table to all processes */
+    /* In this way each process can encode a piece of the intial input-string */
     MPI_Bcast(codes_list, 1, mpi_codelist, 0, MPI_COMM_WORLD);
     
 
@@ -394,38 +462,38 @@ int main()
     if (myrank == 0)
     {
         finish = MPI_Wtime();
-        printf("Total execution time: %e\n", finish - start);
+        printf("Encoding execution time: %e\n", finish - start);
     }
 
-    /* Serial decoding */
-    if (myrank == 0)
-    {
-        printf("\n---- SERIAL DECODING ----\n");
-        struct MinHeapNode *node = root;
-        int i, len;
-        len = strlen(final_string);
-        char *decoded_string = (char *)calloc(len, sizeof(char));
-        for (i = 0; i < len; i++)
-        {
-            if (final_string[i] == '0' && node->left != NULL)
-            {
-                node = node->left;
-            }
-            else if (node->right != NULL)
-            {
-                node = node->right;
-            }
+    /* Serial decoding part */
+    // if (myrank == 0)
+    // {
+        
+    //     struct MinHeapNode *node = root;
+    //     int i, len;
+    //     len = strlen(final_string);
+    //     char *decoded_string = (char *)calloc(len, sizeof(char));
+    //     for (i = 0; i < len; i++)
+    //     {
+    //         if (final_string[i] == '0' && node->left != NULL)
+    //         {
+    //             node = node->left;
+    //         }
+    //         else if (node->right != NULL)
+    //         {
+    //             node = node->right;
+    //         }
 
-            if (isLeaf(node))
-            {
-                strncat(decoded_string, &node->data, 1);
-                node = root;
-            }
-        }
-        //printf("serial decoded string %s\n", decoded_string);
-    }
+    //         if (isLeaf(node))
+    //         {
+    //             strncat(decoded_string, &node->data, 1);
+    //             node = root;
+    //         }
+    //     }
+    // }
+
+    /* Parallel decoding part */
     if(myrank == 0){
-        printf("\n---- PARALLEL DECODING ----\n");
         int len, i; 
         len = strlen(final_string);
         int padding = len % world_size;
@@ -443,58 +511,59 @@ int main()
         }
         struct decoded_node **decoded_list = (struct decoded_node **)malloc(sizeof(decoded_list) * thread_count);
         char *final_decoded_string = (char *)calloc(len, sizeof(char));
+
+        /* Parallel decoding */
         tstart = omp_get_wtime();
         #pragma omp parallel
         {
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
-
-        int i, bits;
+        int bits, new_bits;
         tstop = omp_get_wtime();
         char *temp_string;
-        /* Thread 0 token */
+
+        /* Thread 0 token is special, getting bits*/
         temp_string = decoded_list[0][0].string;
         bits = decoded_list[0][0].padding_bits;
         strncat(final_decoded_string, temp_string, strlen(temp_string));
 
         /* Other threads tokens */
-        /* Anti-dependence */
-        // for (i = 1; i < thread_count; i++)
-        // {
-        //     temp_string = decoded_list[i][bits].string;
-        //     new_bits = decoded_list[i][bits].padding_bits;
-        //     bits = new_bits;
-        //     strncat(final_decoded_string, temp_string, strlen(temp_string));
-        // }
+        for (i = 1; i < thread_count; i++)
+        {
+            temp_string = decoded_list[i][bits].string;
+            bits = decoded_list[i][bits].padding_bits;
+            strncat(final_decoded_string, temp_string, strlen(temp_string));
+        }
 
-        /* Other threads tokens */
-        /* Anti-dependence removed */
-        int bits_array[thread_count];
-        #pragma omp parallel for shared(bits_array)
-            for (i = 1; i < thread_count; i++)
-            {
-                bits_array[i] = decoded_list[i][bits].padding_bits;
-            }
+        // /* Other threads tokens */
+        // /* Anti-dependence removed */
+        // int bits_array[thread_count];
+        // bits_array[0] = bits;
+        // #pragma omp parallel for shared(bits_array) firstprivate(bits)
+        //     for (i = 1; i < thread_count; i++)
+        //     {
+        //         bits_array[i] = decoded_list[i][bits].padding_bits;
+        //         bits = bits_array[i];
+        //     }
         
-        #pragma omp parallel for shared(final_decoded_string) private(temp_string)
-            for (i = 1; i < thread_count; i++)
-            {
-                temp_string = decoded_list[i][bits_array[i]].string;
-                #pragma omp critical
-                strncat(final_decoded_string, temp_string, strlen(temp_string));
-            }
+        // #pragma omp parallel for shared(final_decoded_string) private(temp_string)
+        //     for (i = 1; i < thread_count; i++)
+        //     {
+        //         temp_string = decoded_list[i][bits_array[i]].string;
+        //         #pragma omp critical
+        //         strncat(final_decoded_string, temp_string, strlen(temp_string));
+        //     }
         
         tstop = omp_get_wtime();
-        printf("Elapsed time: %f\n", tstop - tstart);
+        printf("Decoding execution time: %f\n", tstop - tstart);
 
         int res = strcmp(input_string, final_decoded_string);
         printf("res: [%d]\n", res);
-        free(final_decoded_string);
         free(decoded_list);
     }
-
     free(final_string);
     free(input_string);
+
     // Finalize the MPI environment.
     MPI_Type_free(&mpi_codelist);
     MPI_Type_free(&mpi_codeblock);
