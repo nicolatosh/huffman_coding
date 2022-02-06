@@ -1,4 +1,5 @@
 // C program for Huffman Coding
+// Please refer to: https://www.geeksforgeeks.org/huffman-coding-greedy-algo-3
 #include "tree_utils.h"
 #include <stdio.h>
 #include <stdlib.h>

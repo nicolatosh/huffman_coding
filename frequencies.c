@@ -1,4 +1,7 @@
 /**
+ * This was an initial version of frequencies calculation with MPI.
+ * We keep this file for documenting work steps. 
+ * 
  * @file frequencies-mpi.c
  * @author Nicola Arpino & Alessandra Morellini
  * @brief Program that calculates fequencies of strings using MPI

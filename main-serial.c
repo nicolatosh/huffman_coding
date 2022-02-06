@@ -1,5 +1,17 @@
-// C program for Huffman Coding
-
+/**
+ * @file main-serial.c
+ * @author This is the serial code of the program. Contains also a call to the tree construction taken
+ *         from a public implementation (see the report for better explaination).
+ *         The full tree related code is provided in 'tree_utils.c'
+ *         
+ * @brief It contains our contirbutions e.g frequencies-calculation, code-word table, encoding and decoding.
+ *        In general this was used for a gradual parallelization. 
+ *        This code is not explained in details as the parallel-one. See main.c 
+ * 
+ * @version 1.0
+ * @date 2022-02-06
+ * 
+ */
 #include <stdio.h>
 #include <math.h>
 #include <sys/time.h>
@@ -182,20 +194,23 @@ int main()
     
     FillCodesList(root, arr, top);
 
+    /* Print of code-word table */
+    for (i = 0; i< count; i++){
+        printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
+    }
+
     free(out_freq);
     free(out_alphabet);
-    // for (i = 0; i< count; i++){
-    //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
-    // }
-
     char *final_string;
     final_string = calculate_huff_code(input_string);
     //printf("coded string %s\n", final_string);
     
-    /* decoding */
+    /* Decoding settings */
     struct MinHeapNode *node = root;
     len = strlen(final_string);
     char *decoded_string = (char*)calloc(len, sizeof(char));
+
+    /* Decoding loop */
     for(i=0; i<len; i++)
     {
         if(final_string[i] == '0' && node->left != NULL){
@@ -209,7 +224,7 @@ int main()
             node = root;
         }
     }
-    printf("decoded string %s\n", decoded_string);
+    printf("Decoded string: %s\n", decoded_string);
     free(decoded_string);
     free(input_string);
     return 0;

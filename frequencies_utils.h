@@ -1,4 +1,13 @@
-
+/**
+ * @file frequencies_utils.h
+ * @author Nicola Arpino, Alessandra Morellini
+ * @brief Utilities for read input from text and calculate frequencies
+ * @version 0.2
+ * @date 2022-02-06
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
 #include <stdbool.h>
 
 #ifndef FREQENCIES_H

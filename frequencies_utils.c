@@ -1,3 +1,13 @@
+/**
+ * @file frequencies_utils.c
+ * @author Nicola Arpino, Alessandra Morellini
+ * @brief Implementation of frequencies utilities
+ * @version 0.2
+ * @date 2022-02-06
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
 #include "frequencies_utils.h"
 #include <stdbool.h>
 #include <stdio.h>

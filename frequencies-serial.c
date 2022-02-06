@@ -1,3 +1,13 @@
+/**
+ * @file frequencies-serial.c
+ * @author Nicola Arpino, Alessandra Morellini
+ * @brief First version of a serial frequencies calculation.
+ * @version 0.2
+ * @date 2022-02-06
+ * 
+ * @copyright Copyright (c) 2022
+ * 
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,6 +23,7 @@ int main(int argc, char *argv[])
 
     Freqnode **freqlist = (Freqnode **)malloc(sizeof(Freqnode *) * 26);
 
+    /* Modify this string, this is the input */
     char *string = "ciao";
     char alphabeth[] = "abcdefghijklmnopqrstuvwxyz";
 
