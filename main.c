@@ -195,10 +195,10 @@ void FillCodesList(struct MinHeapNode *root, char arr[], int top)
  */
 char *calculate_huff_code(char *in_str)
 {
-    int i = 0, code_len = 0, buff_len = 10;
+    int i = 0, code_len = 0, buff_len = 10, string_len = strlen(in_str);
     char *code;
     char *out_string = (char *)calloc(buff_len, sizeof(char));
-    for (i = 0; i < strlen(in_str); i++)
+    for (i = 0; i < string_len; i++)
     {
         code = codes_list[hash(in_str[i])].code;
         code_len = strlen(code);
@@ -434,11 +434,11 @@ int main(int argc, char **argv)
                 }
             }
         }
-        for (i = 0; i < count; i++)
-        {
-            /* Only for debug, comment in production */
-            printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
-        }
+        // for (i = 0; i < count; i++)
+        // {
+        //     /* Only for debug, comment in production */
+        //     printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
+        // }
         free(out_freq);
         free(out_alphabet);
     }
@@ -480,35 +480,6 @@ int main(int argc, char **argv)
         printf("Encoding execution time: %e\n", finish - start);
     }
 
-    /* Serial decoding part */
-    /* This is equivalent to parallel decoding with 1 thread */
-    /* Could be useful in testing correctness of decoded string */
-    //  if (myrank == 0)
-    //  {
-        
-    //      struct MinHeapNode *node = root;
-    //      int i, len;
-    //      len = strlen(final_string);
-    //      char *decoded_string = (char *)calloc(len, sizeof(char));
-    //      for (i = 0; i < len; i++)
-    //      {
-    //          if (final_string[i] == '0' && node->left != NULL)
-    //          {
-    //              node = node->left;
-    //          }
-    //          else if (node->right != NULL)
-    //          {
-    //              node = node->right;
-    //          }
-
-    //          if (isLeaf(node))
-    //          {
-    //              strncat(decoded_string, &node->data, 1);
-    //              node = root;
-    //          }
-    //      }
-	//     printf("Serial decode %s\n", decoded_string);
-    //  }
 
     /* Parallel decoding part */
     if(myrank == 0){
