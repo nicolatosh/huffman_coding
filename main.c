@@ -3,8 +3,8 @@
  * @file main.c
  * @author Nicola Arpino, Alessandra Morellini
  * @brief 
- * @version 1.1
- * @date 2022-02-04
+ * @version 1.3
+ * @date 2022-02-06
  * 
  */
 
@@ -26,8 +26,9 @@
 #define RECV_SIZE 200000
 #define INPUT_SIZE 200000
 
-/* This number should be calculated as "log2(length of alphabet)"
+/* This number should be calculated as "log2(length of alphabet)" */
 /* It is an upper-bound and represents  */
+
 #define SYMBOL_MAX_BITS 5
 
 /* Length of a single-code. Must be at least as SYMBOL_MAX_BITS */
@@ -106,8 +107,10 @@ struct decoded_node
     int padding_bits; /* bits needed to decode another valid literal */
 };
 
-/* Parallel function task based to create the code-word table */
-
+/* Parallel function task based to create the code-word table
+ * This is another possible solution w.r.t the one used. More details
+ * can be found in the project report
+ */
 // void FillCodesList(struct MinHeapNode *root, char arr[], int top)
 // {
 //     // Assign 0 to left edge and recur
@@ -279,7 +282,7 @@ struct decoded_node *decode_string(struct MinHeapNode *root, char *in_string, in
 }
 
 /* Main code */
-int main()
+int main(int argc, char **argv)
 {
     // Initialize the MPI environment
     MPI_Init(NULL, NULL);
@@ -292,20 +295,18 @@ int main()
     int myrank;
     MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
 
-    char *input_string;
+    // Reading number of threads    
+    int thread_count = atoi(argv[1]);
+    char *input_string, *out_alphabet;
     int frequencies[sizeof(alphabeth) / sizeof(char)] = {0};
     int reduce_buff[sizeof(alphabeth) / sizeof(char)] = {0};
-    int *out_freq;
-    char *out_alphabet;
     char recv_buff[RECV_SIZE] = {""};
-    int *displs;
-    int *sendcount;
+    int *out_freq, *displs, *sendcount;
     char start_scatter = '0';
     size = strlen(alphabeth);
 
     /* Timing data */
     double start, finish;
-
     /* Derived datatype for struct 'mpi_codeblock' */
     /* This is needed in order to be able to send 
     * decoded candidate nodes to a collector (Process 0)
@@ -322,13 +323,14 @@ int main()
     MPI_Type_commit(&mpi_codeblock);
     MPI_Type_contiguous(HASHSIZE, mpi_codeblock, &mpi_codelist);
     MPI_Type_commit(&mpi_codelist);
-
+    
     /* Here actual program starts. The MPI process 0 will:
     *   1) Read the input from file.
     *   2) Calculate how much substring should each other process manage.
     *   3) Send a piece of string to each other process (ScatterV).
     *   4) Takes time for the whole encoding operation (tree building + encoding)
     */
+    printf("Process rank %d\n", myrank);
     if (myrank == 0)
     {
         /* Reading string from default file */
@@ -370,18 +372,18 @@ int main()
     /*MPI_Scatterv and MPI_Reduce are done only if the input can be divided into processes */
     if (start_scatter == '1')
     {
-        MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
-        calculate_frequencies(alphabeth, recv_buff, frequencies);
-        MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
         
+	MPI_Scatterv(input_string, sendcount, displs, MPI_CHAR, recv_buff, RECV_SIZE, MPI_CHAR, 0, MPI_COMM_WORLD);
+	calculate_frequencies(alphabeth, recv_buff, frequencies);
+	MPI_Reduce(frequencies, reduce_buff, sizeof(frequencies) / sizeof(int), MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+
     }else if (myrank == 0){
         /* Otherwise only process 0 calculates the frequences for the entire string */
         /* This situation may happen when the input string is very short */
         calculate_frequencies(alphabeth, input_string, reduce_buff);
         strncpy(recv_buff, input_string, strlen(input_string));
     }
-    free(displs);
-    free(sendcount);
+
 
     /* Waiting every process to complete frequencies calculation */
     MPI_Barrier(MPI_COMM_WORLD);
@@ -405,28 +407,41 @@ int main()
         }
         out_alphabet = realloc(out_alphabet, count * sizeof(char));
         out_freq = realloc(out_freq, count * sizeof(int));
-        
+
         /* Build Huff-tree */
         root = HuffmanCodes(out_alphabet, out_freq, count);
-        free(out_alphabet);
-        free(out_freq);
 
         char arr[MAX_TREE_HT];
         int top = 0;
 
-
-        #pragma omp parallel num_threads(2)
+        if (thread_count == 1)
         {
-            if(omp_get_thread_num() == 0){
-                arr[top] = '1';
-                FillCodesList(root->right, arr, top + 1);
-            }else{
-                arr[top] = '0';
-                FillCodesList(root->left, arr, top + 1);
+            FillCodesList(root, arr, top);
+        }
+        else
+        {
+            #pragma omp parallel firstprivate(arr, top) num_threads(2)
+            {
+                if (omp_get_thread_num() == 0)
+                {
+                    arr[top] = '1';
+                    FillCodesList(root->right, arr, top + 1);
+                }
+                else if (omp_get_thread_num() == 1)
+                {
+                    arr[top] = '0';
+                    FillCodesList(root->left, arr, top + 1);
+                }
             }
         }
+        for (i = 0; i < count; i++)
+        {
+            /* Only for debug, comment in production */
+            printf("char %c code %s\n", codes_list[hash(out_alphabet[i])].name, codes_list[hash(out_alphabet[i])].code);
+        }
+        free(out_freq);
+        free(out_alphabet);
     }
-    
 
     /* Sending code-word table to all processes */
     /* In this way each process can encode a piece of the intial input-string */
@@ -466,42 +481,43 @@ int main()
     }
 
     /* Serial decoding part */
-    // if (myrank == 0)
-    // {
+    /* This is equivalent to parallel decoding with 1 thread */
+    /* Could be useful in testing correctness of decoded string */
+    //  if (myrank == 0)
+    //  {
         
-    //     struct MinHeapNode *node = root;
-    //     int i, len;
-    //     len = strlen(final_string);
-    //     char *decoded_string = (char *)calloc(len, sizeof(char));
-    //     for (i = 0; i < len; i++)
-    //     {
-    //         if (final_string[i] == '0' && node->left != NULL)
-    //         {
-    //             node = node->left;
-    //         }
-    //         else if (node->right != NULL)
-    //         {
-    //             node = node->right;
-    //         }
+    //      struct MinHeapNode *node = root;
+    //      int i, len;
+    //      len = strlen(final_string);
+    //      char *decoded_string = (char *)calloc(len, sizeof(char));
+    //      for (i = 0; i < len; i++)
+    //      {
+    //          if (final_string[i] == '0' && node->left != NULL)
+    //          {
+    //              node = node->left;
+    //          }
+    //          else if (node->right != NULL)
+    //          {
+    //              node = node->right;
+    //          }
 
-    //         if (isLeaf(node))
-    //         {
-    //             strncat(decoded_string, &node->data, 1);
-    //             node = root;
-    //         }
-    //     }
-    // }
+    //          if (isLeaf(node))
+    //          {
+    //              strncat(decoded_string, &node->data, 1);
+    //              node = root;
+    //          }
+    //      }
+	//     printf("Serial decode %s\n", decoded_string);
+    //  }
 
     /* Parallel decoding part */
     if(myrank == 0){
         int len, i; 
-        len = strlen(final_string);
-        int padding = len % world_size;
-        int size_per_process = floor(len / world_size);
+	    len = strlen(final_string);
+        int padding = len % thread_count;
+        int size_per_process = floor(len / thread_count);
         double tstart, tstop;
         int offset = 5;
-        int thread_count = world_size;
-        omp_set_num_threads(world_size);
         if (size_per_process < offset)
         {
             thread_count = 1;
@@ -514,19 +530,21 @@ int main()
 
         /* Parallel decoding */
         tstart = omp_get_wtime();
-        #pragma omp parallel
+        #pragma omp parallel 
         {
+	    printf("Thread num %d\n", omp_get_thread_num());
             decoded_list[omp_get_thread_num()] = decode_string(root, final_string, size_per_process, padding, thread_count - 1, offset);
         }
-        int bits, new_bits;
+        int bits;
         tstop = omp_get_wtime();
         char *temp_string;
+        printf("Merging of decoded contributions\n");
 
-        /* Thread 0 token is special, getting bits*/
+        /* Thread 0 token is special, getting bits */
         temp_string = decoded_list[0][0].string;
         bits = decoded_list[0][0].padding_bits;
         strncat(final_decoded_string, temp_string, strlen(temp_string));
-
+    
         /* Other threads tokens */
         for (i = 1; i < thread_count; i++)
         {
@@ -535,34 +553,15 @@ int main()
             strncat(final_decoded_string, temp_string, strlen(temp_string));
         }
 
-        // /* Other threads tokens */
-        // /* Anti-dependence removed */
-        // int bits_array[thread_count];
-        // bits_array[0] = bits;
-        // #pragma omp parallel for shared(bits_array) firstprivate(bits)
-        //     for (i = 1; i < thread_count; i++)
-        //     {
-        //         bits_array[i] = decoded_list[i][bits].padding_bits;
-        //         bits = bits_array[i];
-        //     }
-        
-        // #pragma omp parallel for shared(final_decoded_string) private(temp_string)
-        //     for (i = 1; i < thread_count; i++)
-        //     {
-        //         temp_string = decoded_list[i][bits_array[i]].string;
-        //         #pragma omp critical
-        //         strncat(final_decoded_string, temp_string, strlen(temp_string));
-        //     }
-        
         tstop = omp_get_wtime();
         printf("Decoding execution time: %f\n", tstop - tstart);
-
+	    /* Verify of correctness */
         int res = strcmp(input_string, final_decoded_string);
         printf("res: [%d]\n", res);
         free(decoded_list);
+        free(final_string);
+        free(input_string);
     }
-    free(final_string);
-    free(input_string);
 
     // Finalize the MPI environment.
     MPI_Type_free(&mpi_codelist);
